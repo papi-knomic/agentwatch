@@ -1,0 +1,9 @@
+{
+    "session_id":  "sess-demo-1",
+    "transcript_path":  "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+    "cwd":  "C:\\Users\\dev\\projects\\demo",
+    "permission_mode":  "default",
+    "hook_event_name":  "Stop",
+    "stop_hook_active":  false,
+    "last_assistant_message":  "I\u0027ve completed the refactoring. Here\u0027s a summary..."
+}

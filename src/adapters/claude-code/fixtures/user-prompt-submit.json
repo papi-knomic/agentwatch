@@ -1,0 +1,8 @@
+{
+    "session_id":  "sess-demo-1",
+    "transcript_path":  "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+    "cwd":  "C:\\Users\\dev\\projects\\demo",
+    "permission_mode":  "default",
+    "hook_event_name":  "UserPromptSubmit",
+    "prompt":  "Write a function to calculate the factorial of a number"
+}

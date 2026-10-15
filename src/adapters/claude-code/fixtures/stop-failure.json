@@ -1,0 +1,9 @@
+{
+    "session_id":  "sess-demo-1",
+    "transcript_path":  "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+    "cwd":  "C:\\Users\\dev\\projects\\demo",
+    "hook_event_name":  "StopFailure",
+    "error":  "rate_limit",
+    "error_details":  "429 Too Many Requests",
+    "last_assistant_message":  "API Error: Rate limit reached"
+}

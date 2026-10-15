@@ -1,0 +1,77 @@
+import { type AgentEvent, type AgentStatus, truncateMessage } from "../../core/types.js";
+import { detectTerminalHost } from "../shared/host.js";
+import type { NormalizeContext } from "../types.js";
+import { claudeCodeMeta } from "./meta.js";
+
+/** Notification types that mean "a human has to act before Claude can continue". */
+const NEEDS_INPUT_NOTIFICATIONS = new Set([
+  "permission_prompt",
+  "elicitation_dialog",
+  "elicitation_url_dialog",
+  "agent_needs_input",
+]);
+
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export function detectClaudeHost(env: NodeJS.ProcessEnv): string | undefined {
+  const entrypoint = env.CLAUDE_CODE_ENTRYPOINT;
+  if (entrypoint === "claude-vscode") return "VS Code";
+  if (entrypoint === "cli") return detectTerminalHost(env) ?? "Terminal";
+  return detectTerminalHost(env) ?? entrypoint;
+}
+
+function statusFor(raw: Record<string, unknown>): { status: AgentStatus; message?: string } | null {
+  switch (raw.hook_event_name) {
+    case "SessionStart":
+      return { status: "idle" };
+    case "UserPromptSubmit":
+    case "PostToolUse":
+    case "PostToolUseFailure":
+      return { status: "working" };
+    case "Notification": {
+      const type = str(raw.notification_type);
+      const message = str(raw.message);
+      if (type !== undefined) {
+        return NEEDS_INPUT_NOTIFICATIONS.has(type) ? { status: "needs_input", message: message ?? "" } : null;
+      }
+      // Older Claude Code versions send no notification_type; only permission prompts need action.
+      return message && /permission/i.test(message) ? { status: "needs_input", message } : null;
+    }
+    case "Stop":
+      return { status: "done" };
+    case "StopFailure": {
+      const parts = [str(raw.error), str(raw.error_details)].filter(Boolean);
+      return { status: "error", message: parts.join(": ") };
+    }
+    case "SessionEnd":
+      return { status: "ended" };
+    default:
+      return null;
+  }
+}
+
+export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentEvent | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const sessionId = str(record.session_id);
+  const cwd = str(record.cwd);
+  if (!sessionId || !cwd) return null;
+
+  const mapped = statusFor(record);
+  if (!mapped) return null;
+
+  const event: AgentEvent = {
+    tool: claudeCodeMeta.id,
+    sessionId,
+    cwd,
+    status: mapped.status,
+    timestamp: ctx.now.toISOString(),
+  };
+  const message = truncateMessage(mapped.message);
+  if (message) event.message = message;
+  const host = detectClaudeHost(ctx.env);
+  if (host) event.host = host;
+  return event;
+}

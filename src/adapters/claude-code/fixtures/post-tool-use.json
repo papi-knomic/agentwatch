@@ -1,0 +1,17 @@
+{
+    "session_id":  "sess-demo-1",
+    "transcript_path":  "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+    "cwd":  "C:\\Users\\dev\\projects\\demo",
+    "permission_mode":  "default",
+    "hook_event_name":  "PostToolUse",
+    "tool_name":  "Write",
+    "tool_input":  {
+                       "file_path":  "C:\\Users\\dev\\projects\\demo\\a.txt",
+                       "content":  "secret file content"
+                   },
+    "tool_response":  {
+                          "type":  "create"
+                      },
+    "tool_use_id":  "toolu_01ABC",
+    "duration_ms":  12
+}
