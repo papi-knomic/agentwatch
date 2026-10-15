@@ -24,16 +24,19 @@ function handlersOf(group: unknown): unknown[] {
   return isJsonObject(group) && Array.isArray(group.hooks) ? group.hooks : [];
 }
 
+export type HookHandler = JsonObject & { command: string };
+
 export function addClaudeStyleHooks(
   settings: JsonObject,
   events: readonly string[],
-  handler: JsonObject & { command: string },
+  handlerFor: (event: string) => HookHandler,
   isOurs: IsOurs,
   path: string,
   summary: string[],
 ): JsonObject {
   const hooks = hooksSection(settings, path);
   for (const event of events) {
+    const handler = handlerFor(event);
     const groups = matcherGroups(hooks, event, path);
     const ours = groups.flatMap(handlersOf).find((h) => isJsonObject(h) && isOurs(h.command));
     if (isJsonObject(ours)) {

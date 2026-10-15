@@ -56,5 +56,6 @@ export async function installCommand(options: {
     console.log(`  ${verb}:`);
     for (const line of result.summary) console.log(`    - ${line}`);
     if (result.backupPath) console.log(`  Backup: ${result.backupPath}`);
+    for (const note of result.notes ?? []) console.log(`  Next: ${note}`);
   }
 }

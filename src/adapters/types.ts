@@ -1,5 +1,5 @@
 import type { Sound } from "../core/config.js";
-import type { AgentEvent } from "../core/types.js";
+import type { AgentEvent, Session } from "../core/types.js";
 
 export interface AdapterMeta {
   /** Stable id used in config, hook commands and events, e.g. "claude-code". */
@@ -30,6 +30,8 @@ export interface InstallResult {
   backupPath?: string;
   /** Human-readable lines describing what was (or, on a dry run, would be) changed. */
   summary: string[];
+  /** Follow-up steps the user has to take themselves, e.g. trusting new hooks in the tool. */
+  notes?: string[];
 }
 
 export interface Adapter {
@@ -38,6 +40,11 @@ export interface Adapter {
   normalize(raw: unknown, ctx: NormalizeContext): AgentEvent | null;
   install(options: InstallOptions): Promise<InstallResult>;
   uninstall(options: InstallOptions): Promise<InstallResult>;
+  /**
+   * A link that opens this exact session in the tool's own UI. It is opened after the project's
+   * VS Code window has been brought to the front, so it may rely on that window having focus.
+   */
+  sessionLink?(session: Session): string | undefined;
 }
 
 /** Identifies hook entries this project added, independent of where the CLI lives on disk. */

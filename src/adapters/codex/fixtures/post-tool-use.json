@@ -1,0 +1,16 @@
+{
+    "session_id":  "codex-sess-1",
+    "transcript_path":  "C:\\Users\\dev\\.codex\\sessions\\codex-sess-1.jsonl",
+    "cwd":  "C:\\Users\\dev\\projects\\api",
+    "model":  "gpt-5.5-codex",
+    "hook_event_name":  "PostToolUse",
+    "turn_id":  "turn-1",
+    "tool_name":  "shell",
+    "tool_use_id":  "call-1",
+    "tool_input":  {
+                       "command":  "npm test"
+                   },
+    "tool_response":  {
+                          "output":  "secret output"
+                      }
+}

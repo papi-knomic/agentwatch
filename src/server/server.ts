@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import type { Config } from "../core/config.js";
 import { APP_NAME, MAX_EVENT_BODY_BYTES } from "../core/constants.js";
 import type { SessionStore, StoreChange } from "../core/store.js";
-import { parseAgentEvent } from "../core/types.js";
+import { parseAgentEvent, type Session } from "../core/types.js";
 import { serveStatic } from "./static.js";
 
 export interface ToolInfo {
@@ -19,6 +19,8 @@ export interface AppServerOptions {
   tools: ToolInfo[];
   staticDir: string;
   version: string;
+  /** Takes the user to a session (e.g. its VS Code tab); returns false if it can't be opened. */
+  openSession?: (session: Session) => boolean;
 }
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -57,6 +59,13 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   } catch {
     throw new HttpError(400, "Invalid JSON");
   }
+}
+
+async function readSessionKey(req: IncomingMessage): Promise<string> {
+  const body = await readJsonBody(req);
+  const key = typeof body === "object" && body !== null ? (body as { key?: unknown }).key : undefined;
+  if (typeof key !== "string") throw new HttpError(400, "Missing key");
+  return key;
 }
 
 function tokenMatches(req: IncomingMessage, token: string): boolean {
@@ -124,10 +133,16 @@ export function createAppServer(options: AppServerOptions): Server {
 
       case "POST /api/sessions/dismiss": {
         if (!sameOrigin && !tokenMatches(req, config.token)) throw new HttpError(403, "Forbidden");
-        const body = await readJsonBody(req);
-        const key = typeof body === "object" && body !== null ? (body as { key?: unknown }).key : undefined;
-        if (typeof key !== "string") throw new HttpError(400, "Missing key");
-        store.remove(key);
+        store.remove(await readSessionKey(req));
+        return sendJson(res, 200, { ok: true });
+      }
+
+      case "POST /api/sessions/open": {
+        // Launches local apps, so it gets the same origin/token check as any other write.
+        if (!sameOrigin && !tokenMatches(req, config.token)) throw new HttpError(403, "Forbidden");
+        const session = store.get(await readSessionKey(req));
+        if (!session) throw new HttpError(404, "Unknown session");
+        if (!options.openSession?.(session)) throw new HttpError(409, "This session can't be opened");
         return sendJson(res, 200, { ok: true });
       }
 

@@ -1,4 +1,4 @@
-import { copyFile } from "node:fs/promises";
+import { copyFile, rm } from "node:fs/promises";
 import { APP_NAME } from "../../core/constants.js";
 import { readTextIfExists, writeFileAtomic } from "../../core/fs.js";
 
@@ -13,6 +13,15 @@ export interface JsonUpdateResult {
   backupPath?: string;
 }
 
+export interface JsonUpdateOptions {
+  dryRun: boolean;
+  /** Off only for files this project owns outright (e.g. ~/.grok/hooks/<app>.json). */
+  backup?: boolean;
+  /** Delete the file instead of leaving `{}` behind. Only for files this project owns outright. */
+  deleteIfEmpty?: boolean;
+  now?: Date;
+}
+
 /**
  * Applies `transform` to a JSON config file. Refuses to touch a file it cannot parse, backs up the
  * original before writing, and writes nothing when the content is unchanged or on a dry run.
@@ -20,8 +29,7 @@ export interface JsonUpdateResult {
 export async function updateJsonFile(
   path: string,
   transform: (data: JsonObject) => JsonObject,
-  dryRun: boolean,
-  now: Date = new Date(),
+  { dryRun, backup = true, deleteIfEmpty = false, now = new Date() }: JsonUpdateOptions,
 ): Promise<JsonUpdateResult> {
   const text = await readTextIfExists(path);
   let data: JsonObject = {};
@@ -43,10 +51,11 @@ export async function updateJsonFile(
   if (!changed || dryRun) return { changed };
 
   let backupPath: string | undefined;
-  if (text !== null) {
+  if (text !== null && backup) {
     backupPath = `${path}.${APP_NAME}-backup-${now.toISOString().replace(/[:.]/g, "-")}`;
     await copyFile(path, backupPath);
   }
-  await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`);
+  if (deleteIfEmpty && Object.keys(next).length === 0) await rm(path, { force: true });
+  else await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`);
   return backupPath ? { changed, backupPath } : { changed };
 }

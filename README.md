@@ -11,15 +11,18 @@ ones are working, which are done, and which are **waiting on you**. You also get
 - **Safe with your config.** `install` adds to your agent's config and backs it up first, and `uninstall` removes exactly what it added.
 - **Private.** Prompts, transcripts and code are never read or stored, only the tool, status, project folder and a short message.
 
-Status: **pre-alpha**. Claude Code works; Codex and Grok are next.
+Status: **pre-alpha**. Claude Code, Codex and Grok are supported; Codex and Grok haven't been tested against live sessions yet.
 
 ## Supported tools
 
-| Tool | Works in | Needs input | Done | Error | Notes |
+| Tool | Installs into | Needs input | Done | Error | Notes |
 |---|---|---|---|---|---|
-| Claude Code | CLI (any terminal), VS Code extension | ✅ | ✅ | ✅ | [adapter docs](src/adapters/claude-code/README.md) |
-| Codex | | | | | Planned. The `notify` hook only reports turn-complete. |
-| Grok | | | | | Planned (`~/.grok/hooks`). |
+| Claude Code | `~/.claude/settings.json` | ✅ | ✅ | ✅ | [adapter docs](src/adapters/claude-code/README.md) |
+| Codex | `~/.codex/hooks.json` | ✅ (permission requests) | ✅ | ❌ no such event | You must trust the hooks once via `/hooks`. [adapter docs](src/adapters/codex/README.md) |
+| Grok | `~/.grok/hooks/orchestrator.json` (its own file) | ⚠️ unverified | ✅ | ✅ | [adapter docs](src/adapters/grok/README.md) |
+
+Hooks are set per user, not per app, so sessions are picked up from the CLI in any terminal and from the VS Code
+extensions too.
 
 Want another tool supported? See [Adding a tool](#adding-a-tool).
 
@@ -34,15 +37,16 @@ npm install
 npm run build
 
 node dist/cli/index.js start --open                    # dashboard at http://127.0.0.1:7878
-node dist/cli/index.js install --tool claude-code --dry-run   # preview the change to ~/.claude/settings.json
-node dist/cli/index.js install --tool claude-code             # apply it (a backup is written next to the file)
+node dist/cli/index.js install --tool all --dry-run     # preview every change
+node dist/cli/index.js install --tool all               # or --tool claude-code | codex | grok
 ```
 
-Then start a **new** Claude Code session anywhere. Sessions appear on the dashboard as soon as they start.
+Edited config files are backed up next to themselves first. Then start a **new** agent session anywhere. Sessions
+appear on the dashboard as soon as they start. For Codex, open `/hooks` once and trust the new hooks.
 
 Optionally run `npm link` once so you can type `orchestrator` instead of `node dist/cli/index.js`.
 
-To remove the hooks again: `node dist/cli/index.js uninstall --tool claude-code`.
+To remove the hooks again: `node dist/cli/index.js uninstall --tool all`.
 
 ## Notifications
 
@@ -56,6 +60,10 @@ A notification is sent when a session **moves into** one of these statuses:
 
 Clicking a notification opens the project in VS Code if the session runs there; otherwise it opens the dashboard.
 Run `node dist/cli/index.js notify-test --status needs_input` to see one.
+
+On the dashboard, **Open in VS Code** brings the project's window to the front. For a session in the Claude Code
+extension it then switches to that session's tab, even when several Claude tabs are open. Sessions in a standalone
+terminal have no button, because a terminal tab can't be focused from outside.
 
 On Windows, notifications are shown under **Windows PowerShell** for now. If none appear, check
 *Settings → System → Notifications* and make sure notifications from Windows PowerShell are allowed and Do Not Disturb is off.
@@ -96,7 +104,8 @@ server. The server tracks sessions, streams changes to the dashboard and sends n
 
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach your local dashboard.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks.
-- Notification clicks can open a VS Code window, but not a specific terminal tab.
+- Notification clicks can open a VS Code window, but not a specific Claude tab or terminal tab. A notification can
+  open only one link, so use the dashboard's **Open in VS Code** to get to the exact Claude tab.
 - macOS and Linux notifications are implemented but not yet tested. macOS notifications can't be clicked.
 
 ## Development

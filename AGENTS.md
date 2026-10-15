@@ -131,9 +131,12 @@ Before saying work is done, run all four. For a manual end-to-end check, set `OR
 
 ## Known limitations (keep up to date)
 
-- Codex: the external `notify` hook only fires on `agent-turn-complete`, so "needs approval" isn't reported (as of the
-  docs checked in Oct 2026; check again).
+- Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
+  event for API-error stops.
+- Grok: per-event payloads aren't documented; the `Notification` → `needs_input` mapping is unverified.
+- Grok also runs hooks from Claude Code's settings.json. The Claude Code adapter ignores calls that have `GROK_*` env vars.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach the local server.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks and are out of scope.
-- Clicking a notification focuses the right VS Code window (`vscode://file/<cwd>`); focusing the exact terminal tab is not
-  supported yet.
+- Clicking a notification focuses the right VS Code window (`vscode://file/<cwd>`), but not the exact Claude tab: a toast
+  can launch only one link. The dashboard's "Open in VS Code" goes to the exact Claude Code extension tab (via the
+  server, see the claude-code adapter README). Focusing the exact terminal tab is not supported.

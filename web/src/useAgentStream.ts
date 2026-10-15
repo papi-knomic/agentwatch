@@ -49,10 +49,19 @@ export function useAgentStream() {
   return { sessions: [...sessions.values()], tools, connection };
 }
 
-export async function dismissSession(key: string): Promise<void> {
-  await fetch("/api/sessions/dismiss", {
+async function postSessionAction(action: "dismiss" | "open", key: string): Promise<void> {
+  await fetch(`/api/sessions/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ key }),
   });
+}
+
+export function dismissSession(key: string): Promise<void> {
+  return postSessionAction("dismiss", key);
+}
+
+/** The server opens it rather than a link here: it has to focus the right window first, then the tab. */
+export function openSession(key: string): Promise<void> {
+  return postSessionAction("open", key);
 }

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultToolSettings } from "../core/config.js";
 import { SessionStore } from "../core/store.js";
+import type { Session } from "../core/types.js";
 import { createAppServer } from "./server.js";
 
 const TOKEN = "test-token-0123456789abcdef";
@@ -10,9 +11,11 @@ const TOKEN = "test-token-0123456789abcdef";
 let server: ReturnType<typeof createAppServer>;
 let store: SessionStore;
 let port: number;
+let opened: Session[];
 
 beforeEach(async () => {
   store = new SessionStore();
+  opened = [];
   server = createAppServer({
     config: {
       port: 0,
@@ -24,6 +27,11 @@ beforeEach(async () => {
     tools: [{ id: "claude-code", label: "Claude Code", color: "#d97757" }],
     staticDir: "does-not-exist",
     version: "0.0.0-test",
+    openSession: (session) => {
+      if (session.host !== "VS Code") return false;
+      opened.push(session);
+      return true;
+    },
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   port = (server.address() as AddressInfo).port;
@@ -121,6 +129,33 @@ describe("app server", () => {
     });
     expect(own.status).toBe(200);
     expect(store.list()).toEqual([]);
+  });
+
+  it("opens a session for the dashboard's own origin only", async () => {
+    await send("POST", "/api/events", { headers: auth, body: { ...event, host: "VS Code" } });
+    const body = { key: "claude-code:s1" };
+    const evil = await send("POST", "/api/sessions/open", {
+      headers: { origin: "https://evil.example" },
+      body,
+    });
+    expect(evil.status).toBe(403);
+    expect((await send("POST", "/api/sessions/open", { body })).status).toBe(403);
+    expect(opened).toEqual([]);
+
+    const own = { origin: `http://127.0.0.1:${port}` };
+    expect((await send("POST", "/api/sessions/open", { headers: own, body })).status).toBe(200);
+    expect(opened.map((s) => s.key)).toEqual(["claude-code:s1"]);
+    const unknown = await send("POST", "/api/sessions/open", { headers: own, body: { key: "nope" } });
+    expect(unknown.status).toBe(404);
+  });
+
+  it("refuses to open sessions that have nowhere to go", async () => {
+    await send("POST", "/api/events", { headers: auth, body: { ...event, host: "Windows Terminal" } });
+    const res = await send("POST", "/api/sessions/open", {
+      headers: { origin: `http://127.0.0.1:${port}` },
+      body: { key: "claude-code:s1" },
+    });
+    expect(res.status).toBe(409);
   });
 
   it("serves a placeholder page when the dashboard is not built", async () => {

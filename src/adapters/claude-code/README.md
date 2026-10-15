@@ -28,6 +28,20 @@ and leaves the rest of the file alone.
 From `CLAUDE_CODE_ENTRYPOINT`: `claude-vscode` → "VS Code" (verified), `cli` → the terminal detected from
 `TERM_PROGRAM` / `WT_SESSION`. Other values are passed through as-is until we've verified what they mean.
 
+## Opening a session
+
+For "VS Code" sessions, the dashboard's **Open in VS Code** opens `vscode://file/<cwd>` to bring the project's window to
+the front. After 1s it opens `vscode://anthropic.claude-code/open?session=<session_id>`, the extension's URI handler
+([docs](https://code.claude.com/docs/en/vs-code#launch-a-vs-code-tab-from-other-tools), checked 2026-10-16). That link
+focuses the session's tab if it is open and resumes the session otherwise.
+
+The order matters. VS Code hands the link to whichever window has focus, and the docs say the session must belong to
+that window's workspace, or a fresh conversation starts instead. Notifications can only launch one link, so a
+notification click only does the first step.
+
+CLI sessions (including the CLI in VS Code's terminal) get no session link. Opening it would resume the conversation a
+second time in an extension tab.
+
 ## Fixtures
 
 The files in `fixtures/` were written from the JSON examples in the official docs, with paths changed to Windows

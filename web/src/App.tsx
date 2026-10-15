@@ -3,6 +3,7 @@ import { APP_NAME } from "../../src/core/constants.js";
 import {
   type Connection,
   dismissSession,
+  openSession,
   type Session,
   type ToolInfo,
   useAgentStream,
@@ -32,12 +33,6 @@ const STATUS_LABEL: Record<Status, string> = {
 
 function projectName(cwd: string): string {
   return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
-}
-
-function vscodeUrl(cwd: string): string {
-  let path = cwd.replace(/\\/g, "/");
-  if (!path.startsWith("/")) path = `/${path}`;
-  return `vscode://file${encodeURI(path)}`;
 }
 
 function timeAgo(iso: string, now: number): string {
@@ -196,9 +191,12 @@ function SessionCard({ session, tool, now }: { session: Session; tool: ToolInfo 
         <time dateTime={session.updatedAt} title={new Date(session.updatedAt).toLocaleString()}>
           {timeAgo(session.updatedAt, now)}
         </time>
-        <a className="open" href={vscodeUrl(session.cwd)}>
-          Open in VS Code
-        </a>
+        {/* Terminal tabs can't be focused from outside, so only VS Code sessions get a button. */}
+        {session.host?.startsWith("VS Code") && (
+          <button type="button" className="open" onClick={() => void openSession(session.key)}>
+            Open in VS Code
+          </button>
+        )}
       </div>
     </article>
   );

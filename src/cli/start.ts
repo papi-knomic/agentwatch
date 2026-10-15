@@ -1,10 +1,11 @@
-import { toolDefaults } from "../adapters/index.js";
+import { getAdapter, toolDefaults } from "../adapters/index.js";
 import { ensureConfig } from "../core/config.js";
 import { APP_DISPLAY_NAME, APP_NAME } from "../core/constants.js";
 import { configPath, sessionsPath } from "../core/paths.js";
 import { SessionStore } from "../core/store.js";
 import { createNotifier } from "../notify/index.js";
 import { createNotificationDispatcher } from "../server/notifications.js";
+import { createSessionOpener } from "../server/open-session.js";
 import { createAppServer } from "../server/server.js";
 import { openUrl } from "./open.js";
 
@@ -63,6 +64,10 @@ export async function start(options: { open: boolean; staticDir: string; version
     tools,
     staticDir: options.staticDir,
     version: options.version,
+    openSession: createSessionOpener({
+      linkFor: (session) => getAdapter(session.tool)?.sessionLink?.(session),
+      openUrl,
+    }),
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

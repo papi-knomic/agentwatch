@@ -59,6 +59,11 @@ describe("normalizeClaudeCode", () => {
     expect(normalizeClaudeCode(null, ctx)).toBeNull();
   });
 
+  it("ignores calls made by Grok, which also runs Claude Code's hooks", () => {
+    const grokCtx = { ...ctx, env: { ...ctx.env, GROK_HOOK_EVENT: "Stop", GROK_SESSION_ID: "g1" } };
+    expect(normalizeClaudeCode(fixture("stop.json"), grokCtx)).toBeNull();
+  });
+
   it("ignores events it does not map", () => {
     expect(
       normalizeClaudeCode({ hook_event_name: "PreCompact", session_id: "a", cwd: "/x" }, ctx),

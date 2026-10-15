@@ -330,10 +330,14 @@ body {
 
 .open {
   margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--text);
+  font: inherit;
   font-weight: 500;
-  text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .open:hover {

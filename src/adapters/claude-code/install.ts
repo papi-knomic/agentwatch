@@ -33,8 +33,9 @@ export async function installClaudeCode(options: InstallOptions): Promise<Instal
   const handler = { type: "command", command: options.hookCommand, async: true, timeout: 10 };
   const result = await updateJsonFile(
     configPath,
-    (settings) => addClaudeStyleHooks(settings, CLAUDE_HOOK_EVENTS, handler, isOurs, configPath, summary),
-    options.dryRun,
+    (settings) =>
+      addClaudeStyleHooks(settings, CLAUDE_HOOK_EVENTS, () => handler, isOurs, configPath, summary),
+    { dryRun: options.dryRun },
   );
   return { configPath, summary, ...result };
 }
@@ -45,7 +46,7 @@ export async function uninstallClaudeCode(options: InstallOptions): Promise<Inst
   const result = await updateJsonFile(
     configPath,
     (settings) => removeClaudeStyleHooks(settings, isOurs, configPath, summary),
-    options.dryRun,
+    { dryRun: options.dryRun },
   );
   return { configPath, summary, ...result };
 }

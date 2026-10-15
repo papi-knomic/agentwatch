@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { getAdapter, toolDefaults } from "../adapters/index.js";
+import { adapters, getAdapter, toolDefaults } from "../adapters/index.js";
 import { ensureConfig } from "../core/config.js";
 import { APP_DISPLAY_NAME, APP_NAME } from "../core/constants.js";
 import { NOTIFIABLE_STATUSES, type NotifiableStatus, type Session } from "../core/types.js";
@@ -38,7 +38,7 @@ Usage:
                                              Show a sample notification
   ${APP_NAME} hook --tool <id> [payload]     Called by agents; not for direct use
 
-Tools: claude-code`;
+Tools: ${adapters.map((a) => a.meta.id).join(", ")}`;
 
 async function notifyTest(toolId: string, status: NotifiableStatus): Promise<void> {
   const config = await ensureConfig(toolDefaults());

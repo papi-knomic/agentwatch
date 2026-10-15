@@ -54,6 +54,8 @@ function statusFor(raw: Record<string, unknown>): { status: AgentStatus; message
 
 export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
+  // Grok also runs hooks from Claude Code's settings.json; its sessions are reported by the grok adapter.
+  if (ctx.env.GROK_HOOK_EVENT || ctx.env.GROK_SESSION_ID) return null;
   const record = raw as Record<string, unknown>;
   const sessionId = str(record.session_id);
   const cwd = str(record.cwd);
