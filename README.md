@@ -9,9 +9,11 @@ ones are working, which are done, and which are **waiting on you**. You also get
 - **Local only.** The server listens on `127.0.0.1`. No telemetry, no accounts, no internet requests.
 - **Doesn't get in your agents' way.** Hooks run in the background, finish in about 150 ms, and quietly do nothing if the dashboard isn't running.
 - **Safe with your config.** `install` adds to your agent's config and backs it up first, and `uninstall` removes exactly what it added.
-- **Private.** Prompts, transcripts and code are never read or stored, only the tool, status, project folder and a short message.
+- **Private.** Transcripts and code are never read or stored, and prompts aren't either, except for each session's task
+  name: the first line of its first prompt, cut to 80 characters (turn it off with `"taskTitles": false`).
 
-Status: **pre-alpha**. Claude Code, Codex and Grok are supported; Codex and Grok haven't been tested against live sessions yet.
+Status: **pre-alpha**. Claude Code, Codex and Grok are supported. The Codex and Grok event formats were checked against
+real captured payloads.
 
 ## Supported tools
 
@@ -77,6 +79,7 @@ Edit `~/.orchestrator/config.json` (created on first start), then restart the se
   "port": 7878,
   "token": "…",                 // generated; hooks use it to authenticate
   "notifications": true,        // master switch
+  "taskTitles": true,           // show each session's task name (first line of its first prompt)
   "tools": {
     "claude-code": {
       "enabled": true,
@@ -100,6 +103,11 @@ agent hook ──▶ orchestrator hook --tool <id> ──HTTP──▶ local ser
 Each tool's hooks run a small CLI command. It converts the tool's event into one shared format and sends it to the local
 server. The server tracks sessions, streams changes to the dashboard and sends notifications.
 
+**After you approve a command.** No tool fires a hook when you approve a permission prompt. The next event arrives
+only when the command *finishes*, so a long command would sit at "needs input". For Claude Code, the server watches
+the agent's process while a session waits for you. When an approved command starts (as a new shell under Claude),
+the session switches to "working · Running approved command", usually within about 4 seconds.
+
 ## Limitations
 
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach your local dashboard.
@@ -107,6 +115,9 @@ server. The server tracks sessions, streams changes to the dashboard and sends n
 - Notification clicks can open a VS Code window, but not a specific Claude tab or terminal tab. A notification can
   open only one link, so use the dashboard's **Open in VS Code** to get to the exact Claude tab.
 - macOS and Linux notifications are implemented but not yet tested. macOS notifications can't be clicked.
+- Codex and Grok don't expose their process id to hooks, so after you approve a command there, the session stays at
+  "needs input" until the command finishes. The same goes for Claude Code permission prompts that don't run a shell (e.g.
+  file edits), but those finish almost instantly.
 
 ## Development
 

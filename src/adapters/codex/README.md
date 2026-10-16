@@ -35,8 +35,13 @@ This is a guess that hasn't been checked against real sessions yet.
 
 ## Fixtures
 
-Written from the field lists in the official docs (common fields + per-event fields). Replace them with real captured
-payloads when you can, removing anything private first.
+Verified by capture with `codex-cli 0.162.0-alpha` (bundled with the VS Code extension) on 2026-10-16. Payloads match
+the docs exactly: snake_case fields, PascalCase `hook_event_name`. `session-start`, `user-prompt-submit`,
+`post-tool-use`, `stop` and `session-end` are real captured payloads, with paths and ids replaced.
+`permission-request` and `interrupt` are still built from the docs: `codex exec` doesn't ask for approval, and we
+didn't interrupt.
+
+The user's first prompt becomes the session's task title (unless `taskTitles: false`).
 
 ## Known gaps
 

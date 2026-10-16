@@ -1,0 +1,15 @@
+{
+    "hookEventName":  "stop",
+    "sessionId":  "grok-sess-1",
+    "cwd":  "C:\\Users\\dev\\projects\\web",
+    "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
+    "timestamp":  "2026-10-16T00:01:10.303087900+00:00",
+    "transcriptPath":  "C:\\Users\\dev\\.grok\\sessions\\C%3A%5CUsers%5Cdev%5Cprojects%5Cweb\\grok-sess-1\\updates.jsonl",
+    "permissionMode":  "default",
+    "reason":  "shutdown",
+    "stopHookActive":  false,
+    "hook_event_name":  "Stop",
+    "session_id":  "grok-sess-1",
+    "transcript_path":  "C:\\Users\\dev\\.grok\\sessions\\C%3A%5CUsers%5Cdev%5Cprojects%5Cweb\\grok-sess-1\\updates.jsonl",
+    "permission_mode":  "default"
+}

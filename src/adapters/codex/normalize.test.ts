@@ -33,10 +33,16 @@ describe("normalizeCodex", () => {
     expect(JSON.stringify(event)).not.toContain("rm -rf");
   });
 
-  it("never carries prompts, tool output or assistant text", () => {
-    for (const file of ["user-prompt-submit.json", "post-tool-use.json", "stop.json"]) {
-      expect(JSON.stringify(normalizeCodex(fixture(file), ctx))).not.toMatch(/pagination|secret output/i);
+  it("never carries tool input, tool output or assistant text", () => {
+    for (const file of ["post-tool-use.json", "stop.json"]) {
+      expect(JSON.stringify(normalizeCodex(fixture(file), ctx))).not.toMatch(/echo hello|DONE/);
     }
+  });
+
+  it("takes the task title from the prompt", () => {
+    expect(normalizeCodex(fixture("user-prompt-submit.json"), ctx)?.title).toBe(
+      "Run the shell command: echo hello. Then reply DONE.",
+    );
   });
 
   it("reports a terminal host when run from one", () => {

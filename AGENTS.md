@@ -9,7 +9,7 @@ A local, open-source dashboard and notifier for AI coding agents. When you run s
 (in VS Code, in a terminal, or in a desktop app), it shows every session in one browser page. It also sends a
 desktop notification when one needs your input or has finished. You can set notifications up differently for each tool.
 
-- **Status:** pre-alpha. Server, dashboard, Windows notifications and the Claude Code adapter work. Codex and Grok are next.
+- **Status:** pre-alpha. Server, dashboard, Windows notifications and the Claude Code, Codex and Grok adapters work.
 - **Name:** "orchestrator" is a placeholder. Don't hard-code it in many places; keep the name in one constant
   (`src/core/constants.ts`) and in `package.json` so it's easy to rename before the first release.
 - **License:** MIT.
@@ -53,6 +53,7 @@ interface AgentEvent {
   cwd: string;         // project folder
   status: AgentStatus; // "ended" removes the session
   message?: string;    // short, at most 200 chars, never a full prompt or transcript
+  title?: string;      // task name: tool's session title, or first line of the first prompt (≤ 80 chars); first one sticks
   host?: string;       // where it runs: "VS Code", "Windows Terminal", ... ("VS Code*" enables VS Code click-through)
   timestamp: string;   // ISO 8601, set when the hook fires; older events than a session's latest are dropped
 }
@@ -74,7 +75,8 @@ same change.
    the user config on every write request, check the `Host` header (blocks DNS rebinding), and check `Origin`
    on browser requests.
 4. **Privacy.** Store only what the shared event format holds. Never save prompts, transcripts, file contents or
-   environment variables.
+   environment variables. The one exception is `title`: at most the first line of a prompt, cut to 80 characters,
+   so users can tell sessions apart. The hook drops it when the user sets `taskTitles: false`.
 5. **Don't damage the user's config.** Installers that edit `~/.claude/settings.json`, `~/.codex/config.toml`,
    `~/.grok/hooks/`, etc. must: add to what's there and never overwrite it, back it up first, be safe to run twice, support `--dry-run`,
    and have an `uninstall` that removes exactly what was added.
@@ -133,7 +135,12 @@ Before saying work is done, run all four. For a manual end-to-end check, set `OR
 
 - Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
   event for API-error stops.
-- Grok: per-event payloads aren't documented; the `Notification` → `needs_input` mapping is unverified.
+- Grok: payloads verified by capture (Grok 1.0.34): `hookEventName` is snake_case, with Claude-style duplicates, and an
+  extra `stop` (reason `shutdown`) arrives after `session_end`. `Notification` never fired in our captures, so its
+  `needs_input` mapping is still unverified.
+- No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
+  `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
+  of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.
 - Grok also runs hooks from Claude Code's settings.json. The Claude Code adapter ignores calls that have `GROK_*` env vars.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach the local server.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks and are out of scope.

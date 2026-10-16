@@ -1,4 +1,4 @@
-import { type AgentEvent, type AgentStatus, truncateMessage } from "../../core/types.js";
+import { type AgentEvent, type AgentStatus, titleFromPrompt, truncateMessage } from "../../core/types.js";
 import { detectHost } from "../shared/host.js";
 import type { NormalizeContext } from "../types.js";
 import { codexMeta } from "./meta.js";
@@ -7,11 +7,14 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function statusFor(raw: Record<string, unknown>): { status: AgentStatus; message?: string } | null {
+function statusFor(
+  raw: Record<string, unknown>,
+): { status: AgentStatus; message?: string; title?: string | undefined } | null {
   switch (raw.hook_event_name) {
     case "SessionStart":
       return { status: "idle" };
     case "UserPromptSubmit":
+      return { status: "working", title: titleFromPrompt(str(raw.prompt)) };
     case "PostToolUse":
       return { status: "working" };
     case "PermissionRequest": {
@@ -52,6 +55,7 @@ export function normalizeCodex(raw: unknown, ctx: NormalizeContext): AgentEvent 
   };
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
+  if (mapped.title) event.title = mapped.title;
   const host = detectHost(ctx.env);
   if (host) event.host = host;
   return event;

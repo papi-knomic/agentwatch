@@ -31,7 +31,7 @@ From `CLAUDE_CODE_ENTRYPOINT`: `claude-vscode` â†’ "VS Code" (verified), `cli` â
 ## Opening a session
 
 For "VS Code" sessions, the dashboard's **Open in VS Code** opens `vscode://file/<cwd>` to bring the project's window to
-the front. After 1s it opens `vscode://anthropic.claude-code/open?session=<session_id>`, the extension's URI handler
+the front. After 0.7s it opens `vscode://anthropic.claude-code/open?session=<session_id>`, the extension's URI handler
 ([docs](https://code.claude.com/docs/en/vs-code#launch-a-vs-code-tab-from-other-tools), checked 2026-10-16). That link
 focuses the session's tab if it is open and resumes the session otherwise.
 

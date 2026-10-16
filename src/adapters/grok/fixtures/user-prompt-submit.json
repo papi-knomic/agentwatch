@@ -1,6 +1,13 @@
 {
+    "hookEventName":  "user_prompt_submit",
     "sessionId":  "grok-sess-1",
     "cwd":  "C:\\Users\\dev\\projects\\web",
     "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
-    "hookEventName":  "UserPromptSubmit"
+    "timestamp":  "2026-10-16T00:00:49.155704800+00:00",
+    "promptId":  "bc9735bf-11fd-4c83-91e6-e6ea7d1aad5f",
+    "permissionMode":  "default",
+    "prompt":  "Reply with just the word OK.",
+    "hook_event_name":  "UserPromptSubmit",
+    "session_id":  "grok-sess-1",
+    "permission_mode":  "default"
 }

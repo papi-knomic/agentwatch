@@ -20,10 +20,11 @@ export async function notifyMacos(notification: DesktopNotification): Promise<vo
     "-e",
     "on run argv",
     "-e",
-    `display notification (item 2 of argv) with title (item 1 of argv)${soundClause}`,
+    `display notification (item 2 of argv) with title (item 1 of argv) subtitle (item 3 of argv)${soundClause}`,
     "-e",
     "end run",
     notification.title,
     notification.body,
+    notification.attribution ?? "",
   ]);
 }

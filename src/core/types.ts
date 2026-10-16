@@ -1,4 +1,4 @@
-import { MAX_MESSAGE_LENGTH } from "./constants.js";
+import { MAX_MESSAGE_LENGTH, MAX_TITLE_LENGTH } from "./constants.js";
 
 export const AGENT_STATUSES = ["idle", "working", "needs_input", "done", "error", "ended"] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
@@ -14,8 +14,18 @@ export interface AgentEvent {
   cwd: string;
   status: AgentStatus;
   message?: string;
+  /**
+   * The session's task name: the tool's own session title, or the start of the first prompt.
+   * The only prompt-derived data kept; users can turn it off with `taskTitles: false`.
+   */
+  title?: string;
   /** Where the agent runs, e.g. "VS Code", "Windows Terminal", "Claude Desktop". */
   host?: string;
+  /**
+   * The agent's process id, when the tool exposes it (Claude Code: CLAUDE_PID). Lets the server notice an
+   * approved command starting, since no tool fires a hook on approval.
+   */
+  pid?: number;
   timestamp: string;
 }
 
@@ -26,7 +36,9 @@ export interface Session {
   cwd: string;
   status: Exclude<AgentStatus, "ended">;
   message?: string;
+  title?: string;
   host?: string;
+  pid?: number;
   startedAt: string;
   updatedAt: string;
 }
@@ -42,12 +54,34 @@ export function truncateMessage(text: string | undefined): string | undefined {
   return oneLine.length > MAX_MESSAGE_LENGTH ? `${oneLine.slice(0, MAX_MESSAGE_LENGTH - 1)}…` : oneLine;
 }
 
+export function truncateTitle(text: string | undefined): string | undefined {
+  const firstLine = text
+    ?.split(/\r?\n/)
+    .find((line) => line.trim() !== "")
+    ?.replace(/\s+/g, " ")
+    .trim();
+  if (!firstLine) return undefined;
+  return firstLine.length > MAX_TITLE_LENGTH ? `${firstLine.slice(0, MAX_TITLE_LENGTH - 1)}…` : firstLine;
+}
+
+/** A task name from a prompt. Slash commands like /clear or /compact aren't tasks. */
+export function titleFromPrompt(prompt: string | undefined): string | undefined {
+  if (!prompt || prompt.trimStart().startsWith("/")) return undefined;
+  return truncateTitle(prompt);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function nonEmptyString(value: unknown, maxLength: number): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= maxLength ? value : undefined;
+}
+
+/** A positive integer pid from a number or a numeric string (env vars are strings), else undefined. */
+export function parsePid(value: unknown): number | undefined {
+  const pid = typeof value === "string" && /^\d{1,10}$/.test(value) ? Number(value) : value;
+  return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
 
 /** Validates an event arriving over HTTP. Returns null for anything malformed. */
@@ -73,6 +107,10 @@ export function parseAgentEvent(value: unknown): AgentEvent | null {
   };
   const message = truncateMessage(typeof value.message === "string" ? value.message : undefined);
   if (message) event.message = message;
+  const title = truncateTitle(typeof value.title === "string" ? value.title : undefined);
+  if (title) event.title = title;
+  const pid = parsePid(value.pid);
+  if (pid) event.pid = pid;
   const host = nonEmptyString(value.host, 64);
   if (host) event.host = host;
   return event;

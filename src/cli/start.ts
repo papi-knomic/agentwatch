@@ -4,8 +4,10 @@ import { APP_DISPLAY_NAME, APP_NAME } from "../core/constants.js";
 import { configPath, sessionsPath } from "../core/paths.js";
 import { SessionStore } from "../core/store.js";
 import { createNotifier } from "../notify/index.js";
+import { createApprovalWatcher } from "../server/approval-watch.js";
 import { createNotificationDispatcher } from "../server/notifications.js";
 import { createSessionOpener } from "../server/open-session.js";
+import { defaultListChildren } from "../server/process-list.js";
 import { createAppServer } from "../server/server.js";
 import { openUrl } from "./open.js";
 
@@ -52,6 +54,11 @@ export async function start(options: { open: boolean; staticDir: string; version
     }),
   );
   setInterval(() => store.pruneStale(), PRUNE_INTERVAL_MS).unref();
+  createApprovalWatcher({
+    store,
+    listChildren: defaultListChildren(),
+    log: (message) => console.error(message),
+  }).start();
 
   const tools = Object.entries(config.tools).map(([id, settings]) => ({
     id,

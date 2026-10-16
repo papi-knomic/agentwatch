@@ -3,9 +3,11 @@ import { vscodeUrl } from "./notifications.js";
 
 /**
  * VS Code gives a URI to whichever window has focus, so the session link must wait until the project's
- * window is in front. Long enough for VS Code to switch windows; short enough not to feel slow.
+ * window is in front. If this is too short, the link reaches the previously focused window and opens a
+ * blank conversation there. 1s felt laggy; 0.7s is a guess at the margin, not measured. Raise it if
+ * blank conversations show up.
  */
-export const SESSION_LINK_DELAY_MS = 1000;
+export const SESSION_LINK_DELAY_MS = 700;
 
 /** URLs to open, in order, to take the user to a session. Empty when it doesn't run in VS Code. */
 export function sessionOpenUrls(session: Session, sessionLink: string | undefined): string[] {

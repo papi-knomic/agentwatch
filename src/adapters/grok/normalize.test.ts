@@ -32,7 +32,7 @@ describe("normalizeGrok", () => {
   });
 
   it("falls back to GROK_* env vars for the event and session", () => {
-    const env = { GROK_HOOK_EVENT: "Stop", GROK_SESSION_ID: "from-env" };
+    const env = { GROK_HOOK_EVENT: "stop", GROK_SESSION_ID: "from-env" };
     expect(normalizeGrok({ cwd: "/w" }, { env, now: ctx.now })).toMatchObject({
       sessionId: "from-env",
       status: "done",
@@ -44,7 +44,26 @@ describe("normalizeGrok", () => {
     expect(event?.cwd).toBe("/root");
   });
 
-  it("does not carry tool input", () => {
-    expect(JSON.stringify(normalizeGrok(fixture("post-tool-use.json"), ctx))).not.toContain("npm run build");
+  it("does not carry tool input or output", () => {
+    expect(JSON.stringify(normalizeGrok(fixture("post-tool-use.json"), ctx))).not.toContain("echo hello");
+  });
+
+  it("takes the task title from the prompt", () => {
+    expect(normalizeGrok(fixture("user-prompt-submit.json"), ctx)?.title).toBe(
+      "Reply with just the word OK.",
+    );
+  });
+
+  it("ignores the extra Stop Grok sends after the session shuts down", () => {
+    expect(normalizeGrok(fixture("stop-shutdown.json"), ctx)).toBeNull();
+  });
+
+  it("understands snake_case event names on their own", () => {
+    const raw = { hookEventName: "user_prompt_submit", sessionId: "s", cwd: "/w" };
+    expect(normalizeGrok(raw, ctx)?.status).toBe("working");
+    const fromEnv = { sessionId: "s", cwd: "/w" };
+    expect(
+      normalizeGrok(fromEnv, { ...ctx, env: { GROK_HOOK_EVENT: "post_tool_use_failure" } })?.status,
+    ).toBe("working");
   });
 });

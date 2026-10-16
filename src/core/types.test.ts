@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAgentEvent, truncateMessage } from "./types.js";
+import { parseAgentEvent, titleFromPrompt, truncateMessage } from "./types.js";
 
 const valid = {
   tool: "claude-code",
@@ -32,6 +32,27 @@ describe("parseAgentEvent", () => {
   it("truncates long messages", () => {
     const event = parseAgentEvent({ ...valid, message: "x".repeat(500) });
     expect(event?.message).toHaveLength(200);
+  });
+});
+
+describe("titleFromPrompt", () => {
+  it("uses the first non-empty line, trimmed to 80 characters", () => {
+    expect(titleFromPrompt("\n  Fix the   login bug\nDetails: the token expires")).toBe("Fix the login bug");
+    const long = titleFromPrompt("a".repeat(200));
+    expect(long).toHaveLength(80);
+    expect(long?.endsWith("…")).toBe(true);
+  });
+
+  it("skips slash commands and empty prompts", () => {
+    expect(titleFromPrompt("/clear")).toBeUndefined();
+    expect(titleFromPrompt("  /compact keep the plan")).toBeUndefined();
+    expect(titleFromPrompt("   ")).toBeUndefined();
+    expect(titleFromPrompt(undefined)).toBeUndefined();
+  });
+
+  it("is carried through HTTP validation, truncated", () => {
+    expect(parseAgentEvent({ ...valid, title: "Fix login" })?.title).toBe("Fix login");
+    expect(parseAgentEvent({ ...valid, title: "x".repeat(300) })?.title).toHaveLength(80);
   });
 });
 

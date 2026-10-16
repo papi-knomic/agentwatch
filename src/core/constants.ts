@@ -13,6 +13,7 @@ export const HOOK_STDIN_TIMEOUT_MS = 500;
 export const HOOK_STDIN_MAX_BYTES = 1024 * 1024;
 
 export const MAX_MESSAGE_LENGTH = 200;
+export const MAX_TITLE_LENGTH = 80;
 export const MAX_EVENT_BODY_BYTES = 64 * 1024;
 
 /** Sessions with no events for this long are dropped (e.g. the agent was killed without a SessionEnd). */

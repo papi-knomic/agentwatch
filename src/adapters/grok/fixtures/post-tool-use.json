@@ -1,10 +1,30 @@
 {
+    "hookEventName":  "post_tool_use",
     "sessionId":  "grok-sess-1",
     "cwd":  "C:\\Users\\dev\\projects\\web",
     "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
-    "hookEventName":  "PostToolUse",
-    "toolName":  "Bash",
+    "timestamp":  "2026-10-16T00:01:27.831000000+00:00",
+    "transcriptPath":  "C:\\Users\\dev\\.grok\\sessions\\C%3A%5CUsers%5Cdev%5Cprojects%5Cweb\\grok-sess-1\\updates.jsonl",
+    "permissionMode":  "default",
+    "toolName":  "run_terminal_command",
+    "toolUseId":  "call-1",
     "toolInput":  {
-                      "command":  "npm run build"
-                  }
+                      "command":  "echo hello"
+                  },
+    "toolResult":  "hello",
+    "toolInputTruncated":  false,
+    "toolResultTruncated":  false,
+    "durationMs":  120,
+    "isBackgrounded":  false,
+    "hook_event_name":  "PostToolUse",
+    "session_id":  "grok-sess-1",
+    "transcript_path":  "C:\\Users\\dev\\.grok\\sessions\\C%3A%5CUsers%5Cdev%5Cprojects%5Cweb\\grok-sess-1\\updates.jsonl",
+    "permission_mode":  "default",
+    "tool_name":  "run_terminal_command",
+    "tool_input":  {
+                       "command":  "echo hello"
+                   },
+    "tool_response":  "hello",
+    "tool_use_id":  "call-1",
+    "duration_ms":  120
 }

@@ -87,6 +87,23 @@ describe("runHook", () => {
       expect(received).toEqual([]);
     });
 
+    it("drops the task title when taskTitles is off", async () => {
+      const port = (server.address() as AddressInfo).port;
+      const prompt = JSON.stringify({
+        session_id: "s1",
+        cwd: "C:\\projects\\demo",
+        hook_event_name: "UserPromptSubmit",
+        prompt: "Fix the login bug",
+      });
+      await runHook("claude-code", prompt);
+      expect(received[0]?.body).toMatchObject({ title: "Fix the login bug" });
+
+      await writeFile(join(home, "config.json"), JSON.stringify({ port, token: TOKEN, taskTitles: false }));
+      await runHook("claude-code", prompt);
+      expect(received[1]?.body).not.toHaveProperty("title");
+      expect(JSON.stringify(received[1]?.body)).not.toContain("login");
+    });
+
     it("sends nothing when the tool is disabled in config", async () => {
       const port = (server.address() as AddressInfo).port;
       await writeFile(

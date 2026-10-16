@@ -49,6 +49,15 @@ describe("SessionStore", () => {
     expect(store.get("claude-code:s1")?.message).toBeUndefined();
   });
 
+  it("keeps the first task title for the whole session", () => {
+    const store = new SessionStore();
+    store.apply(event({ status: "idle" }));
+    store.apply(event({ title: "Fix login bug", timestamp: "2026-10-16T12:00:01.000Z" }));
+    store.apply(event({ status: "done", timestamp: "2026-10-16T12:00:02.000Z" }));
+    store.apply(event({ title: "Also update the docs", timestamp: "2026-10-16T12:00:03.000Z" }));
+    expect(store.get("claude-code:s1")?.title).toBe("Fix login bug");
+  });
+
   it("removes the session when it ends", () => {
     const store = new SessionStore();
     store.apply(event({}));

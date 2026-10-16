@@ -1,4 +1,11 @@
-import { type AgentEvent, type AgentStatus, truncateMessage } from "../../core/types.js";
+import {
+  type AgentEvent,
+  type AgentStatus,
+  parsePid,
+  titleFromPrompt,
+  truncateMessage,
+  truncateTitle,
+} from "../../core/types.js";
 import { detectTerminalHost } from "../shared/host.js";
 import type { NormalizeContext } from "../types.js";
 import { claudeCodeMeta } from "./meta.js";
@@ -22,11 +29,15 @@ export function detectClaudeHost(env: NodeJS.ProcessEnv): string | undefined {
   return detectTerminalHost(env) ?? entrypoint;
 }
 
-function statusFor(raw: Record<string, unknown>): { status: AgentStatus; message?: string } | null {
+function statusFor(
+  raw: Record<string, unknown>,
+): { status: AgentStatus; message?: string; title?: string | undefined } | null {
   switch (raw.hook_event_name) {
     case "SessionStart":
-      return { status: "idle" };
+      // session_title is only present when resuming a session that already has one.
+      return { status: "idle", title: truncateTitle(str(raw.session_title)) };
     case "UserPromptSubmit":
+      return { status: "working", title: titleFromPrompt(str(raw.prompt)) };
     case "PostToolUse":
     case "PostToolUseFailure":
       return { status: "working" };
@@ -73,6 +84,9 @@ export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentE
   };
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
+  if (mapped.title) event.title = mapped.title;
+  const pid = parsePid(ctx.env.CLAUDE_PID);
+  if (pid) event.pid = pid;
   const host = detectClaudeHost(ctx.env);
   if (host) event.host = host;
   return event;

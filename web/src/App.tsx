@@ -11,16 +11,11 @@ import {
 
 type Status = Session["status"];
 
-const SECTIONS: { id: string; title: string; hint: string; statuses: Status[] }[] = [
-  {
-    id: "attention",
-    title: "Needs you",
-    hint: "Waiting on a permission or an answer",
-    statuses: ["needs_input", "error"],
-  },
-  { id: "done", title: "Done", hint: "Finished and ready for a follow-up", statuses: ["done"] },
-  { id: "working", title: "Working", hint: "", statuses: ["working"] },
-  { id: "idle", title: "Idle", hint: "", statuses: ["idle"] },
+const GROUPS: { id: string; title: string; statuses: Status[] }[] = [
+  { id: "attention", title: "Needs you", statuses: ["needs_input", "error"] },
+  { id: "working", title: "Working", statuses: ["working"] },
+  { id: "done", title: "Done", statuses: ["done"] },
+  { id: "idle", title: "Idle", statuses: ["idle"] },
 ];
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -35,13 +30,17 @@ function projectName(cwd: string): string {
   return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
 }
 
+function sessionTitle(session: Session): string | undefined {
+  return session.title?.trim() ? session.title : undefined;
+}
+
 function timeAgo(iso: string, now: number): string {
   const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (seconds < 45) return "just now";
+  if (seconds < 45) return "now";
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.round(minutes / 60);
-  return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
 function useNow(intervalMs: number): number {
@@ -56,165 +55,297 @@ function useNow(intervalMs: number): number {
 export function App() {
   const { sessions, tools, connection } = useAgentStream();
   const [filter, setFilter] = useState<string | null>(null);
-  const now = useNow(30_000);
+  const now = useNow(15_000);
 
   const toolById = useMemo(() => new Map(tools.map((t) => [t.id, t])), [tools]);
   const visible = filter ? sessions.filter((s) => s.tool === filter) : sessions;
-  const attention = sessions.filter((s) => s.status === "needs_input" || s.status === "error").length;
+  const count = (statuses: Status[]) => sessions.filter((s) => statuses.includes(s.status)).length;
+  const attention = count(["needs_input", "error"]);
+  // A tag that says the same thing on every row is noise.
+  const showTool = new Set(visible.map((s) => s.tool)).size > 1;
 
   useEffect(() => {
-    document.title = attention > 0 ? `(${attention}) Agent Dashboard` : "Agent Dashboard";
+    document.title = attention > 0 ? `(${attention}) Agents` : "Agents";
   }, [attention]);
 
   return (
-    <div className="page">
+    <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <h1>Agents</h1>
+        <div className="topbar-inner">
+          <div className="brand">
+            <Logo />
+            <span>Agents</span>
+          </div>
+          <div className="counts">
+            <Count tone="attention" value={attention} label="need you" />
+            <Count tone="working" value={count(["working"])} label="working" />
+            <Count tone="done" value={count(["done"])} label="done" />
+          </div>
+          <ConnectionBadge connection={connection} />
         </div>
-        <Summary sessions={sessions} />
-        <ConnectionBadge connection={connection} />
       </header>
 
-      {tools.length > 1 && (
-        <nav className="filters" aria-label="Filter by tool">
-          <button
-            type="button"
-            className={filter === null ? "chip active" : "chip"}
-            onClick={() => setFilter(null)}
-          >
-            All
-          </button>
-          {tools.map((tool) => (
-            <button
-              type="button"
-              key={tool.id}
-              className={filter === tool.id ? "chip active" : "chip"}
-              onClick={() => setFilter(tool.id)}
-            >
-              <span className="dot" style={{ background: tool.color }} />
-              {tool.label}
-            </button>
-          ))}
-        </nav>
-      )}
+      <main className="content">
+        {tools.length > 1 && (
+          <nav className="filters" aria-label="Filter by tool">
+            <FilterChip active={filter === null} onClick={() => setFilter(null)} label="All" />
+            {tools.map((tool) => (
+              <FilterChip
+                key={tool.id}
+                active={filter === tool.id}
+                onClick={() => setFilter(tool.id)}
+                label={tool.label}
+                color={tool.color}
+              />
+            ))}
+          </nav>
+        )}
 
-      {visible.length === 0 ? (
-        <EmptyState connection={connection} />
-      ) : (
-        SECTIONS.map((section) => {
-          const items = visible
-            .filter((s) => section.statuses.includes(s.status))
-            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-          if (items.length === 0) return null;
-          return (
-            <section key={section.id} className={`section section-${section.id}`}>
-              <h2>
-                {section.title} <span className="count">{items.length}</span>
-                {section.hint && <span className="hint">{section.hint}</span>}
-              </h2>
-              <div className="grid">
-                {items.map((session) => (
-                  <SessionCard
-                    key={session.key}
-                    session={session}
-                    tool={toolById.get(session.tool)}
-                    now={now}
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })
-      )}
+        {visible.length === 0 ? (
+          <EmptyState connection={connection} filtered={filter !== null} />
+        ) : (
+          GROUPS.map((group) => {
+            const items = visible
+              .filter((s) => group.statuses.includes(s.status))
+              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+            if (items.length === 0) return null;
+            return (
+              <section key={group.id} className={`group group-${group.id}`}>
+                <h2 className="group-head">
+                  {group.title}
+                  <span className="group-count">{items.length}</span>
+                </h2>
+                <ul className="rows">
+                  {items.map((session) => (
+                    <SessionRow
+                      key={session.key}
+                      session={session}
+                      tool={toolById.get(session.tool)}
+                      showTool={showTool}
+                      now={now}
+                    />
+                  ))}
+                </ul>
+              </section>
+            );
+          })
+        )}
+      </main>
     </div>
   );
 }
 
-function Summary({ sessions }: { sessions: Session[] }) {
-  const count = (statuses: Status[]) => sessions.filter((s) => statuses.includes(s.status)).length;
-  const items = [
-    { label: "need you", value: count(["needs_input", "error"]), tone: "attention" },
-    { label: "working", value: count(["working"]), tone: "working" },
-    { label: "done", value: count(["done"]), tone: "done" },
-  ];
+function Logo() {
   return (
-    <ul className="summary">
-      {items.map((item) => (
-        <li key={item.label} className={`summary-item tone-${item.tone}`}>
-          <strong>{item.value}</strong> {item.label}
-        </li>
-      ))}
-    </ul>
+    <svg className="logo" viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="1" y="1" width="8" height="8" rx="2.5" />
+      <rect x="11" y="1" width="8" height="8" rx="2.5" />
+      <rect x="1" y="11" width="8" height="8" rx="2.5" />
+      <rect className="logo-accent" x="11" y="11" width="8" height="8" rx="4" />
+    </svg>
+  );
+}
+
+function Count({ tone, value, label }: { tone: string; value: number; label: string }) {
+  return (
+    <span className={`count tone-${tone}${value > 0 ? " nonzero" : ""}`}>
+      <span className="count-dot" />
+      <strong>{value}</strong>
+      <span className="count-label">{label}</span>
+    </span>
   );
 }
 
 function ConnectionBadge({ connection }: { connection: Connection }) {
-  const label =
-    connection === "live" ? "Live" : connection === "connecting" ? "Connecting…" : "Reconnecting…";
+  const label = connection === "live" ? "Live" : connection === "connecting" ? "Connecting" : "Reconnecting";
   return (
     <span className={`connection connection-${connection}`} role="status">
-      <span className="dot" />
+      <span className="connection-dot" />
       {label}
     </span>
   );
 }
 
-function SessionCard({ session, tool, now }: { session: Session; tool: ToolInfo | undefined; now: number }) {
-  const color = tool?.color ?? "var(--muted)";
+function FilterChip(props: { active: boolean; onClick: () => void; label: string; color?: string }) {
   return (
-    <article className={`card status-${session.status}`} style={{ "--tool": color } as CSSProperties}>
-      <div className="card-head">
-        <span className="tool-badge">
-          <span className="dot" />
-          {tool?.label ?? session.tool}
-        </span>
-        {session.host && <span className="host">{session.host}</span>}
-        <button
-          type="button"
-          className="dismiss"
-          title="Dismiss"
-          aria-label={`Dismiss ${projectName(session.cwd)}`}
-          onClick={() => void dismissSession(session.key)}
-        >
-          ×
-        </button>
-      </div>
-      <h3 className="project" title={session.cwd}>
-        {projectName(session.cwd)}
-      </h3>
-      <p className="path">{session.cwd}</p>
-      {session.message && <p className="message">{session.message}</p>}
-      <div className="card-foot">
-        <span className="status-pill">{STATUS_LABEL[session.status]}</span>
-        <time dateTime={session.updatedAt} title={new Date(session.updatedAt).toLocaleString()}>
-          {timeAgo(session.updatedAt, now)}
-        </time>
-        {/* Terminal tabs can't be focused from outside, so only VS Code sessions get a button. */}
-        {session.host?.startsWith("VS Code") && (
-          <button type="button" className="open" onClick={() => void openSession(session.key)}>
-            Open in VS Code
-          </button>
-        )}
-      </div>
-    </article>
+    <button
+      type="button"
+      className={props.active ? "chip active" : "chip"}
+      aria-pressed={props.active}
+      onClick={props.onClick}
+    >
+      {props.color && <span className="chip-dot" style={{ background: props.color }} />}
+      {props.label}
+    </button>
   );
 }
 
-function EmptyState({ connection }: { connection: Connection }) {
+function StatusIcon({ status }: { status: Status }) {
+  const label = STATUS_LABEL[status];
+  switch (status) {
+    case "needs_input":
+      return (
+        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
+          <circle cx="8" cy="8" r="7" className="fill" />
+          <path d="M8 4.5v4" className="glyph" />
+          <circle cx="8" cy="11.25" r="0.9" className="glyph-dot" />
+        </svg>
+      );
+    case "error":
+      return (
+        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
+          <circle cx="8" cy="8" r="7" className="fill" />
+          <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" className="glyph" />
+        </svg>
+      );
+    case "done":
+      return (
+        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
+          <circle cx="8" cy="8" r="7" className="fill" />
+          <path d="M5 8.25l2 2 4-4.25" className="glyph" />
+        </svg>
+      );
+    case "working":
+      return (
+        <svg className="status-icon spin" viewBox="0 0 16 16" role="img" aria-label={label}>
+          <circle cx="8" cy="8" r="6" className="track" />
+          <path d="M8 2a6 6 0 0 1 6 6" className="arc" />
+        </svg>
+      );
+    case "idle":
+      return (
+        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
+          <circle cx="8" cy="8" r="5.5" className="ring" />
+        </svg>
+      );
+  }
+}
+
+function SessionRow(props: { session: Session; tool: ToolInfo | undefined; showTool: boolean; now: number }) {
+  const { session, tool, now } = props;
+  const project = projectName(session.cwd);
+  const title = sessionTitle(session);
+  const color = tool?.color ?? "var(--muted)";
+  return (
+    <li className={`row status-${session.status}`} style={{ "--tool": color } as CSSProperties}>
+      <StatusIcon status={session.status} />
+      <div className="row-main">
+        <div className="row-title">
+          <span className="row-name" title={title ?? session.cwd}>
+            {title ?? project}
+          </span>
+          {title && (
+            <span className="row-project" title={session.cwd}>
+              {project}
+            </span>
+          )}
+        </div>
+        {session.message ? (
+          <p className="row-message">{session.message}</p>
+        ) : (
+          <p className="row-path">{session.cwd}</p>
+        )}
+      </div>
+      <div className="row-meta">
+        {props.showTool && (
+          <span className="tool-tag">
+            <span className="tool-dot" />
+            {tool?.label ?? session.tool}
+          </span>
+        )}
+        {session.host && <span className="host">{session.host}</span>}
+      </div>
+      <time
+        className="row-time"
+        dateTime={session.updatedAt}
+        title={new Date(session.updatedAt).toLocaleString()}
+      >
+        {timeAgo(session.updatedAt, now)}
+      </time>
+      <div className="row-actions">
+        {/* Terminal tabs can't be focused from outside, so only VS Code sessions get a button. */}
+        {session.host?.startsWith("VS Code") && <OpenButton sessionKey={session.key} />}
+        <button
+          type="button"
+          className="icon-button dismiss"
+          title="Dismiss"
+          aria-label={`Dismiss ${title ?? project}`}
+          onClick={() => void dismissSession(session.key)}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+          </svg>
+        </button>
+      </div>
+    </li>
+  );
+}
+
+type OpenState = "idle" | "opening" | "failed";
+
+/** Shows progress right away: VS Code takes about a second to switch windows and then tabs. */
+function OpenButton({ sessionKey }: { sessionKey: string }) {
+  const [state, setState] = useState<OpenState>("idle");
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const id = setTimeout(() => setState("idle"), state === "opening" ? 1500 : 2500);
+    return () => clearTimeout(id);
+  }, [state]);
+
+  const open = async () => {
+    setState("opening");
+    if (!(await openSession(sessionKey))) setState("failed");
+  };
+
+  return (
+    <button
+      type="button"
+      className={`open-button open-${state}`}
+      title="Open this session in VS Code"
+      disabled={state === "opening"}
+      onClick={() => void open()}
+    >
+      {state === "opening" ? (
+        <svg className="spin" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5L7.5 8.5" />
+        </svg>
+      )}
+      <span>{state === "opening" ? "Opening" : state === "failed" ? "Couldn't open" : "Open"}</span>
+    </button>
+  );
+}
+
+function EmptyState({ connection, filtered }: { connection: Connection; filtered: boolean }) {
   if (connection !== "live") {
-    return <p className="empty">Connecting to the local server…</p>;
+    return (
+      <div className="empty">
+        <p className="empty-lead">Connecting to the local server…</p>
+      </div>
+    );
+  }
+  if (filtered) {
+    return (
+      <div className="empty">
+        <p className="empty-lead">No sessions for this tool right now.</p>
+      </div>
+    );
   }
   return (
     <div className="empty">
       <h2>No agent sessions yet</h2>
-      <p>Sessions show up here as soon as an agent with hooks installed starts or finishes a turn.</p>
+      <p className="empty-lead">
+        Sessions appear here as soon as an agent with hooks installed starts or finishes a turn.
+      </p>
       <ol>
         <li>
-          Install the hooks: <code>{APP_NAME} install --tool claude-code</code>
+          Install the hooks <code>{APP_NAME} install --tool claude-code</code>
         </li>
-        <li>Start a new Claude Code session anywhere: VS Code, a terminal, or the desktop app.</li>
+        <li>Start a new session in VS Code, a terminal or the desktop app.</li>
       </ol>
     </div>
   );

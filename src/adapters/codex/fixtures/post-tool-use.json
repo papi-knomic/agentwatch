@@ -1,16 +1,15 @@
 {
-    "session_id":  "codex-sess-1",
-    "transcript_path":  "C:\\Users\\dev\\.codex\\sessions\\codex-sess-1.jsonl",
-    "cwd":  "C:\\Users\\dev\\projects\\api",
-    "model":  "gpt-5.5-codex",
-    "hook_event_name":  "PostToolUse",
-    "turn_id":  "turn-1",
-    "tool_name":  "shell",
-    "tool_use_id":  "call-1",
-    "tool_input":  {
-                       "command":  "npm test"
-                   },
-    "tool_response":  {
-                          "output":  "secret output"
-                      }
+  "session_id": "codex-sess-1",
+  "turn_id": "01a14205-9e87-7161-a75a-b49336e64d3a",
+  "transcript_path": "C:\\Users\\dev\\.codex\\sessions\\2026\\10\\16\\rollout-2026-10-16T01-03-46-codex-sess-1.jsonl",
+  "cwd": "C:\\Users\\dev\\projects\\api",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "bypassPermissions",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo hello"
+  },
+  "tool_response": "hello\r\n",
+  "tool_use_id": "exec-8126112f-3054-49e4-a553-c778690ca476"
 }

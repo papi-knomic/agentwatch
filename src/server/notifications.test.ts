@@ -45,10 +45,14 @@ describe("notification dispatcher", () => {
     apply({ status: "needs_input", message: "Claude needs your permission to use Bash" });
     expect(notifier).toHaveBeenCalledTimes(1);
     expect(notifier).toHaveBeenCalledWith({
-      title: "Claude · demo",
+      title: "demo needs you",
       body: "Claude needs your permission to use Bash",
+      attribution: "Claude · VS Code",
       sound: "im",
+      status: "needs_input",
+      color: "#d97757",
       clickUrl: "vscode://file/C:/projects/demo",
+      actions: [{ label: "Open dashboard", url: "http://127.0.0.1:7878" }],
     });
   });
 
@@ -90,10 +94,27 @@ describe("notification dispatcher", () => {
     expect(muted.notifier).toHaveBeenCalledTimes(1);
   });
 
+  it("leads the body with the task title when there is one", () => {
+    const { notifier, apply, advance } = setup();
+    apply({ status: "needs_input", title: "Fix the login bug", message: "Claude needs your permission" });
+    advance(10_000);
+    apply({ status: "done", title: "Fix the login bug" });
+    expect(notifier.mock.calls.map((call) => call[0]?.body)).toEqual([
+      "Fix the login bug — Claude needs your permission",
+      "Fix the login bug",
+    ]);
+  });
+
   it("links to the dashboard for sessions outside VS Code", () => {
     const { notifier, apply } = setup();
     apply({ status: "done", host: "Windows Terminal" });
-    expect(notifier.mock.calls[0]?.[0]).toMatchObject({ clickUrl: "http://127.0.0.1:7878" });
+    const notification = notifier.mock.calls[0]?.[0];
+    expect(notification).toMatchObject({
+      title: "demo is done",
+      attribution: "Claude · Windows Terminal",
+      clickUrl: "http://127.0.0.1:7878",
+    });
+    expect(notification).not.toHaveProperty("actions");
   });
 });
 

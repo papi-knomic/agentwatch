@@ -1,6 +1,14 @@
 {
+    "hookEventName":  "session_end",
     "sessionId":  "grok-sess-1",
     "cwd":  "C:\\Users\\dev\\projects\\web",
     "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
-    "hookEventName":  "SessionEnd"
+    "timestamp":  "2026-10-16T00:01:06.131672100+00:00",
+    "transcriptPath":  "C:\\Users\\dev\\.grok\\sessions\\C%3A%5CUsers%5Cdev%5Cprojects%5Cweb\\grok-sess-1\\updates.jsonl",
+    "permissionMode":  "default",
+    "reason":  "shutdown",
+    "hook_event_name":  "SessionEnd",
+    "session_id":  "grok-sess-1",
+    "transcript_path":  "C:\\Users\\dev\\.grok\\sessions\\C%3A%5CUsers%5Cdev%5Cprojects%5Cweb\\grok-sess-1\\updates.jsonl",
+    "permission_mode":  "default"
 }

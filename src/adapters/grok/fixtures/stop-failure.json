@@ -1,7 +1,9 @@
 {
+    "hookEventName":  "stop_failure",
     "sessionId":  "grok-sess-1",
     "cwd":  "C:\\Users\\dev\\projects\\web",
     "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
-    "hookEventName":  "StopFailure",
-    "error":  "rate_limit"
+    "error":  "rate_limit",
+    "hook_event_name":  "StopFailure",
+    "session_id":  "grok-sess-1"
 }

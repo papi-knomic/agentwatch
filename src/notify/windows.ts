@@ -1,4 +1,8 @@
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { Sound } from "../core/config.js";
+import { appHome } from "../core/paths.js";
+import { ensureStatusIcon } from "./icon.js";
 import { runProcess } from "./run.js";
 import type { DesktopNotification } from "./types.js";
 
@@ -35,7 +39,7 @@ export function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function buildToastXml(notification: DesktopNotification): string {
+export function buildToastXml(notification: DesktopNotification, iconUri?: string): string {
   const launch = notification.clickUrl
     ? ` activationType="protocol" launch="${escapeXml(notification.clickUrl)}"`
     : "";
@@ -43,23 +47,48 @@ export function buildToastXml(notification: DesktopNotification): string {
     notification.sound === "silent"
       ? `<audio silent="true"/>`
       : `<audio src="${SOUND_EVENTS[notification.sound]}" loop="false"/>`;
+  const actions = notification.actions?.length
+    ? [
+        "<actions>",
+        ...notification.actions.map(
+          (action) =>
+            `<action content="${escapeXml(action.label)}" activationType="protocol" arguments="${escapeXml(action.url)}"/>`,
+        ),
+        "</actions>",
+      ]
+    : [];
   return [
     `<toast${launch}>`,
     `<visual><binding template="ToastGeneric">`,
     `<text>${escapeXml(notification.title)}</text>`,
     `<text>${escapeXml(notification.body)}</text>`,
+    notification.attribution
+      ? `<text placement="attribution">${escapeXml(notification.attribution)}</text>`
+      : "",
+    iconUri ? `<image placement="appLogoOverride" hint-crop="circle" src="${escapeXml(iconUri)}"/>` : "",
     `</binding></visual>`,
+    ...actions,
     audio,
     `</toast>`,
   ].join("");
 }
 
+async function iconUriFor(notification: DesktopNotification): Promise<string | undefined> {
+  try {
+    const path = await ensureStatusIcon(join(appHome(), "icons"), notification.color, notification.status);
+    return pathToFileURL(path).href;
+  } catch {
+    return undefined; // A toast without the icon beats no toast.
+  }
+}
+
 export async function notifyWindows(notification: DesktopNotification): Promise<void> {
+  const xml = buildToastXml(notification, await iconUriFor(notification));
   const encoded = Buffer.from(SCRIPT, "utf16le").toString("base64");
   // Windows PowerShell 5.1 (not pwsh) is required: it can load the WinRT toast APIs directly.
   await runProcess(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
-    { AGENT_TOAST_XML: buildToastXml(notification), AGENT_TOAST_APP_ID: APP_ID },
+    { AGENT_TOAST_XML: xml, AGENT_TOAST_APP_ID: APP_ID },
   );
 }

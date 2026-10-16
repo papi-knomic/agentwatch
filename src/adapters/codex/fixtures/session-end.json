@@ -1,8 +1,7 @@
 {
-    "session_id":  "codex-sess-1",
-    "transcript_path":  "C:\\Users\\dev\\.codex\\sessions\\codex-sess-1.jsonl",
-    "cwd":  "C:\\Users\\dev\\projects\\api",
-    "model":  "gpt-5.5-codex",
-    "hook_event_name":  "SessionEnd",
-    "reason":  "other"
+  "session_id": "codex-sess-1",
+  "transcript_path": "C:\\Users\\dev\\.codex\\sessions\\2026\\10\\16\\rollout-2026-10-16T01-03-46-codex-sess-1.jsonl",
+  "cwd": "C:\\Users\\dev\\projects\\api",
+  "hook_event_name": "SessionEnd",
+  "reason": "other"
 }

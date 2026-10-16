@@ -50,6 +50,11 @@ export class SessionStore {
     // Keep the last useful message while the agent is working; clear it on idle.
     const message = event.message ?? (event.status === "working" ? existing?.message : undefined);
     if (message) session.message = message;
+    // The first title sticks, like the session names in the tools' own lists.
+    const title = existing?.title ?? event.title;
+    if (title) session.title = title;
+    const pid = event.pid ?? existing?.pid;
+    if (pid) session.pid = pid;
     const host = event.host ?? existing?.host;
     if (host) session.host = host;
 

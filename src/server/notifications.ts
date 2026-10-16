@@ -20,15 +20,27 @@ function isNotifiable(status: string): status is NotifiableStatus {
   return (NOTIFIABLE_STATUSES as readonly string[]).includes(status);
 }
 
-function bodyFor(status: NotifiableStatus, session: Session): string {
+function titleFor(status: NotifiableStatus, project: string): string {
   switch (status) {
     case "needs_input":
-      return session.message ?? "Needs your input";
+      return `${project} needs you`;
     case "done":
-      return "Finished. Ready for your next prompt.";
+      return `${project} is done`;
     case "error":
-      return session.message ? `Stopped with an error: ${session.message}` : "Stopped with an error";
+      return `${project} stopped with an error`;
   }
+}
+
+/** Leads with the task title so two sessions in the same project can be told apart. */
+function bodyFor(status: NotifiableStatus, session: Session): string {
+  const detail =
+    status === "needs_input"
+      ? (session.message ?? "Waiting for your input")
+      : status === "error"
+        ? (session.message ?? "The turn ended with an error")
+        : undefined;
+  if (!session.title) return detail ?? "Ready for your next prompt";
+  return detail ? `${session.title} — ${detail}` : session.title;
 }
 
 function clickUrlFor(settings: ToolSettings, session: Session, dashboardUrl: string): string | undefined {
@@ -51,12 +63,17 @@ export function buildNotification(
   dashboardUrl: string,
 ): DesktopNotification {
   const notification: DesktopNotification = {
-    title: `${settings.label} · ${projectName(session.cwd)}`,
+    title: titleFor(status, projectName(session.cwd)),
     body: bodyFor(status, session),
+    attribution: [settings.label, session.host].filter(Boolean).join(" · "),
     sound: settings.sound,
+    status,
+    color: settings.color,
   };
   const clickUrl = clickUrlFor(settings, session, dashboardUrl);
   if (clickUrl) notification.clickUrl = clickUrl;
+  // The dashboard is the only place that can open the exact Claude tab, so always offer it.
+  if (clickUrl !== dashboardUrl) notification.actions = [{ label: "Open dashboard", url: dashboardUrl }];
   return notification;
 }
 

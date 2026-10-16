@@ -45,11 +45,30 @@ describe("normalizeClaudeCode", () => {
     );
   });
 
-  it("never carries prompts, assistant text or file contents", () => {
-    for (const file of ["user-prompt-submit.json", "stop.json", "post-tool-use.json"]) {
+  it("never carries assistant text or file contents", () => {
+    for (const file of ["stop.json", "post-tool-use.json"]) {
       const serialized = JSON.stringify(normalizeClaudeCode(fixture(file), ctx));
       expect(serialized).not.toMatch(/factorial|refactoring|secret file content/);
     }
+  });
+
+  it("takes the task title from the prompt, and nothing else from it", () => {
+    const event = normalizeClaudeCode(fixture("user-prompt-submit.json"), ctx);
+    expect(event?.title).toBe("Write a function to calculate the factorial of a number");
+    expect(event?.message).toBeUndefined();
+  });
+
+  it("takes the title from session_title when resuming, and skips slash commands", () => {
+    const base = { session_id: "s", cwd: "/w" };
+    const start = {
+      ...base,
+      hook_event_name: "SessionStart",
+      source: "resume",
+      session_title: "Fix login bug",
+    };
+    expect(normalizeClaudeCode(start, ctx)?.title).toBe("Fix login bug");
+    const slash = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/compact" };
+    expect(normalizeClaudeCode(slash, ctx)?.title).toBeUndefined();
   });
 
   it("rejects payloads without a session id or cwd", () => {

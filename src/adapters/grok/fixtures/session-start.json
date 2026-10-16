@@ -1,6 +1,12 @@
 {
+    "hookEventName":  "session_start",
     "sessionId":  "grok-sess-1",
     "cwd":  "C:\\Users\\dev\\projects\\web",
     "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
-    "hookEventName":  "SessionStart"
+    "timestamp":  "2026-10-16T00:00:49.092416100+00:00",
+    "permissionMode":  "default",
+    "source":  "new",
+    "hook_event_name":  "SessionStart",
+    "session_id":  "grok-sess-1",
+    "permission_mode":  "default"
 }

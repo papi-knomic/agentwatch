@@ -25,6 +25,8 @@ export interface Config {
   token: string;
   /** Master switch for desktop notifications. */
   notifications: boolean;
+  /** Show each session's task name (the start of its first prompt). false: no prompt text is kept at all. */
+  taskTitles?: boolean;
   tools: Record<string, ToolSettings>;
 }
 
@@ -85,7 +87,13 @@ export function parseConfig(value: unknown, toolDefaults: Record<string, ToolSet
   for (const [id, defaults] of Object.entries(toolDefaults)) {
     tools[id] = parseToolSettings(rawTools[id], defaults);
   }
-  return { port, token, notifications: bool(value.notifications, true), tools };
+  return {
+    port,
+    token,
+    notifications: bool(value.notifications, true),
+    taskTitles: bool(value.taskTitles, true),
+    tools,
+  };
 }
 
 /** Read-only: used by the hook, which must never create files. */
@@ -125,6 +133,7 @@ export async function ensureConfig(
     port: DEFAULT_PORT,
     token: randomBytes(24).toString("hex"),
     notifications: true,
+    taskTitles: true,
     tools: { ...toolDefaults },
   };
   const serialized = `${JSON.stringify(config, null, 2)}\n`;
