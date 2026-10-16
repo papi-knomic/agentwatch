@@ -51,6 +51,14 @@ real transcripts from VS Code extension 2.1.300 on 2026-10-16. If it breaks, the
 title. Also not verified: how a `/rename` mid-session is stored in the transcript. Until the session is resumed, the
 generated title may still show.
 
+## Project folder (`cwd`)
+
+The hook payload's `cwd` is the "current working directory when the hook is invoked", so it follows Claude's `cd`
+into a subfolder. The adapter uses `CLAUDE_PROJECT_DIR` instead ("the project root where the session started",
+exported to command hooks; [docs](https://code.claude.com/docs/en/hooks), checked 2026-10-16) and falls back to the
+payload's `cwd`. Opening a subfolder via `vscode://file/...` replaces the focused window's workspace and kills the
+running session.
+
 ## Opening a session
 
 For "VS Code" sessions, the dashboard's **Open in VS Code** opens `vscode://file/<cwd>` to bring the project's window to

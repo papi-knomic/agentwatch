@@ -54,7 +54,7 @@ type AgentStatus = "idle" | "working" | "needs_input" | "done" | "error" | "ende
 interface AgentEvent {
   tool: string;        // adapter id, e.g. "claude-code", "codex", "grok"
   sessionId: string;   // from the tool if it gives one; otherwise derived from tool + cwd
-  cwd: string;         // project folder
+  cwd: string;         // project folder (session root, not the shell's current dir); first one sticks
   status: AgentStatus; // "ended" removes the session
   message?: string;    // short, at most 200 chars, never a full prompt or transcript
   title?: string;      // task name: tool's session title, or first line of the first prompt (≤ 80 chars); first one sticks

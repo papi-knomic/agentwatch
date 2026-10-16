@@ -13,6 +13,7 @@ export type TitleSource = "tool" | "prompt";
 export interface AgentEvent {
   tool: string;
   sessionId: string;
+  /** The project folder (the session's root, not the shell's current directory). The first one sticks. */
   cwd: string;
   status: AgentStatus;
   message?: string;

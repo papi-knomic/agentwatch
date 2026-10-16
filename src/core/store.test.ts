@@ -33,6 +33,13 @@ describe("SessionStore", () => {
     expect(store.get("claude-code:s1")?.status).toBe("done");
   });
 
+  it("keeps the session's first project folder when a later event reports a subfolder", () => {
+    const store = new SessionStore();
+    store.apply(event({ status: "idle" }));
+    store.apply(event({ cwd: "C:\\projects\\demo\\src", timestamp: "2026-10-16T12:00:01.000Z" }));
+    expect(store.get("claude-code:s1")?.cwd).toBe("C:\\projects\\demo");
+  });
+
   it("removes a helper card and suppresses later lifecycle events, even when detection arrives late", () => {
     const store = new SessionStore();
     const changes: StoreChange[] = [];

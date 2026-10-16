@@ -92,6 +92,12 @@ describe("normalizeClaudeCode", () => {
     expect(normalizeClaudeCode(fixture("stop.json"), ctx)?.title).toBeUndefined();
   });
 
+  it("reports the project root, not the subfolder Claude cd'd into", () => {
+    const raw = { ...(fixture("post-tool-use.json") as object), cwd: "C:\\Users\\dev\\projects\\demo\\src" };
+    const rootCtx = { ...ctx, env: { ...ctx.env, CLAUDE_PROJECT_DIR: "C:\\Users\\dev\\projects\\demo" } };
+    expect(normalizeClaudeCode(raw, rootCtx)?.cwd).toBe("C:\\Users\\dev\\projects\\demo");
+  });
+
   it("rejects payloads without a session id or cwd", () => {
     expect(normalizeClaudeCode({ hook_event_name: "Stop", cwd: "C:\\x" }, ctx)).toBeNull();
     expect(normalizeClaudeCode({ hook_event_name: "Stop", session_id: "a" }, ctx)).toBeNull();

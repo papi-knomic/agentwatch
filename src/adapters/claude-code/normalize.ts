@@ -71,7 +71,9 @@ export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentE
   if (ctx.env.GROK_HOOK_EVENT || ctx.env.GROK_SESSION_ID) return null;
   const record = raw as Record<string, unknown>;
   const sessionId = str(record.session_id);
-  const cwd = str(record.cwd);
+  // The payload's cwd follows the shell's `cd` (e.g. into src/). The project root is what the dashboard
+  // groups by and what "Open in VS Code" opens: a subfolder replaces the window's workspace and kills the session.
+  const cwd = str(ctx.env.CLAUDE_PROJECT_DIR) ?? str(record.cwd);
   if (!sessionId || !cwd) return null;
 
   const mapped = statusFor(record);

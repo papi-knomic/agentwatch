@@ -55,7 +55,8 @@ export class SessionStore {
       key,
       tool: event.tool,
       sessionId: event.sessionId,
-      cwd: event.cwd,
+      // The project folder doesn't change within a session; a later event's cwd may be a subfolder the agent cd'd into.
+      cwd: existing?.cwd ?? event.cwd,
       status,
       startedAt: existing?.startedAt ?? event.timestamp,
       updatedAt:
