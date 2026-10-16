@@ -8,6 +8,7 @@ import type { ChildProcessInfo, ListChildren } from "./process-list.js";
  */
 
 export const APPROVED_MESSAGE = "Running approved command";
+const ERROR_LOG_INTERVAL_MS = 60_000;
 
 const SHELLS = new Set(["cmd", "powershell", "pwsh", "bash", "sh", "zsh", "fish", "dash"]);
 
@@ -35,6 +36,15 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
   const { store, listChildren, intervalMs = 2000, graceMs = 2000, now = Date.now, log } = options;
   let timer: NodeJS.Timeout | undefined;
   let running = false;
+  // A failing lister would otherwise log every interval; say it once a minute, and say when it recovers.
+  let lastError: { message: string; loggedAt: number } | undefined;
+
+  function reportFailure(error: unknown): void {
+    const message = (error instanceof Error ? error.message : String(error)).split(/\r?\n/)[0] ?? "";
+    if (lastError?.message === message && now() - lastError.loggedAt < ERROR_LOG_INTERVAL_MS) return;
+    log?.(`Approval watch failed (retrying every ${intervalMs / 1000}s): ${message}`);
+    lastError = { message, loggedAt: now() };
+  }
 
   async function tick(): Promise<void> {
     if (running) return;
@@ -44,6 +54,10 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
     try {
       const pids = [...new Set(waiting.map((s) => s.pid as number))];
       const children = (await listChildren(pids)).filter(isApprovedCommand);
+      if (lastError) {
+        log?.("Approval watch recovered.");
+        lastError = undefined;
+      }
       for (const session of waiting) {
         const since = Date.parse(session.updatedAt) + graceMs;
         if (!children.some((c) => c.parentPid === session.pid && c.startedAt > since)) continue;
@@ -60,7 +74,7 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
         });
       }
     } catch (error) {
-      log?.(`Approval watch failed: ${error instanceof Error ? error.message : String(error)}`);
+      reportFailure(error);
     } finally {
       running = false;
     }

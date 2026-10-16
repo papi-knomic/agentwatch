@@ -18,9 +18,6 @@ export const CODEX_HOOK_EVENTS = [
 /** Codex caps these at 3s and always runs SessionEnd synchronously. */
 const SHORT_TIMEOUT_EVENTS = new Set(["SessionEnd", "Interrupt"]);
 
-const TRUST_NOTE =
-  "Codex skips new hooks until you trust them: run /hooks in Codex (CLI or extension) and approve them.";
-
 export function codexHooksPath(options: Pick<InstallOptions, "homeDir" | "env">): string {
   const codexHome = options.env.CODEX_HOME;
   return join(codexHome && codexHome.length > 0 ? codexHome : join(options.homeDir, ".codex"), "hooks.json");
@@ -43,7 +40,12 @@ export async function installCodex(options: InstallOptions): Promise<InstallResu
     (data) => addClaudeStyleHooks(data, CODEX_HOOK_EVENTS, handlerFor, isOurs, configPath, summary),
     { dryRun: options.dryRun },
   );
-  return { configPath, summary, ...result, ...(result.changed ? { notes: [TRUST_NOTE] } : {}) };
+  return {
+    configPath,
+    summary,
+    ...result,
+    ...(result.changed ? { notes: codexMeta.afterInstall ?? [] } : {}),
+  };
 }
 
 export async function uninstallCodex(options: InstallOptions): Promise<InstallResult> {

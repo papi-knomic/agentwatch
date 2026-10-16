@@ -3,6 +3,9 @@ import { detectHost } from "../shared/host.js";
 import type { NormalizeContext } from "../types.js";
 import { grokMeta } from "./meta.js";
 
+/** Notification text that asks the user to decide something (permission prompts, questions). */
+const NEEDS_INPUT_MESSAGE = /permission|approv|allow|confirm|question|choose|answer/i;
+
 interface Mapped {
   status: AgentStatus;
   message?: string;
@@ -42,10 +45,13 @@ function statusFor(event: string | undefined, raw: Record<string, unknown>): Map
     case "PostToolUse":
     case "PostToolUseFailure":
       return { status: "working" };
-    case "Notification":
-      // Unverified: never fired in our captures. Treated like Claude Code's notifications,
-      // which Grok's hook system mirrors.
-      return { status: "needs_input", message: field(raw, "message", "message") ?? "Needs your attention" };
+    case "Notification": {
+      // Seen live: about a minute after Stop, Grok sends "Waiting for your next prompt", an idle ping, not a
+      // request. Only messages that ask for a decision mean "needs you"; anything else is ignored rather
+      // than raising a false alarm.
+      const message = field(raw, "message", "message");
+      return message && NEEDS_INPUT_MESSAGE.test(message) ? { status: "needs_input", message } : null;
+    }
     case "Stop":
       // Grok sends an extra Stop with reason "shutdown" after SessionEnd; it is not a finished turn.
       return raw.reason === "shutdown" ? null : { status: "done" };

@@ -92,6 +92,9 @@ describe("approval watcher", () => {
       log: (m) => logs.push(m),
     });
     await watcher.tick();
+    await watcher.tick();
+    await watcher.tick();
+    expect(logs).toHaveLength(1); // repeats are not logged every interval
     expect(logs[0]).toContain("boom");
     expect(store.get("claude-code:s1")?.status).toBe("needs_input");
   });

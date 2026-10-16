@@ -7,7 +7,7 @@ turn-complete, and hooks cover that and more.
 
 ## Installed hooks
 
-`orchestrator install --tool codex` adds one `command` hook per event below to `~/.codex/hooks.json`
+`agentwatch install --tool codex` adds one `command` hook per event below to `~/.codex/hooks.json`
 (or `$CODEX_HOME/hooks.json`), adding to anything already there. Hooks run with `"async": true`, so Codex doesn't wait for them.
 `SessionEnd` always runs synchronously in Codex, so it and `Interrupt` get the documented 3-second maximum timeout.
 

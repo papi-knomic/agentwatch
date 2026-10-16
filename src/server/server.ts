@@ -5,6 +5,7 @@ import type { Config } from "../core/config.js";
 import { APP_NAME, MAX_EVENT_BODY_BYTES } from "../core/constants.js";
 import type { SessionStore, StoreChange } from "../core/store.js";
 import { parseAgentEvent, type Session } from "../core/types.js";
+import { type SetupService, UnknownToolError } from "./setup.js";
 import { serveStatic } from "./static.js";
 
 export interface ToolInfo {
@@ -21,6 +22,10 @@ export interface AppServerOptions {
   version: string;
   /** Takes the user to a session (e.g. its VS Code tab); returns false if it can't be opened. */
   openSession?: (session: Session) => boolean;
+  /** Connection status and one-click connect for the landing page. */
+  setup?: SetupService;
+  /** Called after answering POST /api/shutdown (`agentwatch stop`). */
+  onShutdown?: () => void;
 }
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -144,6 +149,37 @@ export function createAppServer(options: AppServerOptions): Server {
         if (!session) throw new HttpError(404, "Unknown session");
         if (!options.openSession?.(session)) throw new HttpError(409, "This session can't be opened");
         return sendJson(res, 200, { ok: true });
+      }
+
+      case "GET /api/setup": {
+        if (!options.setup) throw new HttpError(404, "Not found");
+        return sendJson(res, 200, await options.setup.status());
+      }
+
+      case "POST /api/setup/connect": {
+        // Edits the user's agent configs: only our own dashboard may ask, never a token-holding script.
+        if (!sameOrigin) throw new HttpError(403, "Forbidden");
+        if (!options.setup) throw new HttpError(404, "Not found");
+        const body = await readJsonBody(req);
+        const { tool, dryRun } = (typeof body === "object" && body !== null ? body : {}) as {
+          tool?: unknown;
+          dryRun?: unknown;
+        };
+        if (typeof tool !== "string") throw new HttpError(400, "Missing tool");
+        try {
+          return sendJson(res, 200, await options.setup.connect(tool, dryRun === true));
+        } catch (error) {
+          if (error instanceof UnknownToolError) throw new HttpError(400, error.message);
+          throw new HttpError(500, error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      case "POST /api/shutdown": {
+        // Only the CLI (which can read the token) may stop the server, not a web page.
+        if (origin !== undefined || !tokenMatches(req, config.token)) throw new HttpError(403, "Forbidden");
+        sendJson(res, 200, { ok: true });
+        options.onShutdown?.();
+        return;
       }
 
       default:

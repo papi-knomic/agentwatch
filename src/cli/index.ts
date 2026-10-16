@@ -9,7 +9,8 @@ import { NOTIFIABLE_STATUSES, type NotifiableStatus, type Session } from "../cor
 import { createNotifier } from "../notify/index.js";
 import { buildNotification } from "../server/notifications.js";
 import { runHook } from "./hook.js";
-import { installCommand } from "./install.js";
+import { installCommand, setupCommand } from "./install.js";
+import { statusCommand, stopServer } from "./service.js";
 import { start } from "./start.js";
 
 const cliPath = fileURLToPath(import.meta.url);
@@ -28,15 +29,23 @@ function version(): string {
 
 const HELP = `${APP_DISPLAY_NAME}: one dashboard and desktop notifications for your AI coding agents.
 
-Usage:
-  ${APP_NAME} start [--open]                 Start the local dashboard server
-  ${APP_NAME} install --tool <id|all>        Add hooks to the tool's config (backs it up first)
+Get started:
+  ${APP_NAME} setup [--no-autostart]       Connect every agent, start at login, start the dashboard
+
+Everyday:
+  ${APP_NAME} status                       What's running and which agents are connected
+  ${APP_NAME} start [--background] [--open]
+                                         Start the dashboard server (--background: no window)
+  ${APP_NAME} stop                         Stop the background server
+
+Fine-grained:
+  ${APP_NAME} install --tool <id|all>      Add hooks to a tool's config (backs it up first)
         [--dry-run] [--home <dir>]
-  ${APP_NAME} uninstall --tool <id|all>      Remove exactly the hooks that install added
-        [--dry-run] [--home <dir>]
+  ${APP_NAME} uninstall --tool <id|all>    Remove exactly what install added; "all" also removes
+        [--dry-run] [--home <dir>]         start-at-login and the notification registration
   ${APP_NAME} notify-test [--tool <id>] [--status needs_input|done|error]
-                                             Show a sample notification
-  ${APP_NAME} hook --tool <id> [payload]     Called by agents; not for direct use
+                                         Show a sample notification
+  ${APP_NAME} hook --tool <id> [payload]   Called by agents; not for direct use
 
 Tools: ${adapters.map((a) => a.meta.id).join(", ")}`;
 
@@ -82,13 +91,35 @@ async function main(): Promise<void> {
       home: { type: "string" },
       "dry-run": { type: "boolean", default: false },
       open: { type: "boolean", default: false },
+      background: { type: "boolean", default: false },
+      "no-autostart": { type: "boolean", default: false },
+      "no-open": { type: "boolean", default: false },
     },
     allowPositionals: false,
   });
 
   switch (command) {
+    case "setup":
+      return setupCommand({
+        cliPath,
+        autostart: !values["no-autostart"],
+        open: !values["no-open"],
+      });
     case "start":
-      return start({ open: values.open ?? false, staticDir, version: version() });
+      return start({
+        open: values.open ?? false,
+        background: values.background ?? false,
+        staticDir,
+        version: version(),
+        cliPath,
+      });
+    case "stop":
+      console.log(
+        (await stopServer()) ? `${APP_DISPLAY_NAME} stopped.` : `${APP_DISPLAY_NAME} isn't running.`,
+      );
+      return;
+    case "status":
+      return statusCommand(cliPath);
     case "install":
     case "uninstall":
       return installCommand({

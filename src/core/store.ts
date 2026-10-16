@@ -47,12 +47,20 @@ export class SessionStore {
       startedAt: existing?.startedAt ?? event.timestamp,
       updatedAt: event.timestamp,
     };
-    // Keep the last useful message while the agent is working; clear it on idle.
-    const message = event.message ?? (event.status === "working" ? existing?.message : undefined);
-    if (message) session.message = message;
-    // The first title sticks, like the session names in the tools' own lists.
-    const title = existing?.title ?? event.title;
-    if (title) session.title = title;
+    // A message describes the event that brought it ("needs your permission", "Running approved command"),
+    // so it never carries over: a stale one on a card is worse than none.
+    if (event.message) session.message = event.message;
+    // The tool's own name for the session wins and stays current, like the tab name in VS Code. A
+    // prompt-derived title only fills in until then, and the first one sticks.
+    if (event.title && event.titleSource === "tool") {
+      session.title = event.title;
+      session.titleSource = "tool";
+    } else if (existing?.title) {
+      session.title = existing.title;
+      if (existing.titleSource) session.titleSource = existing.titleSource;
+    } else if (event.title) {
+      session.title = event.title;
+    }
     const pid = event.pid ?? existing?.pid;
     if (pid) session.pid = pid;
     const host = event.host ?? existing?.host;

@@ -5,6 +5,7 @@ import { defaultToolSettings } from "../core/config.js";
 import { SessionStore } from "../core/store.js";
 import type { Session } from "../core/types.js";
 import { createAppServer } from "./server.js";
+import { UnknownToolError } from "./setup.js";
 
 const TOKEN = "test-token-0123456789abcdef";
 
@@ -12,10 +13,21 @@ let server: ReturnType<typeof createAppServer>;
 let store: SessionStore;
 let port: number;
 let opened: Session[];
+let connects: { tool: string; dryRun: boolean }[];
+let shutdowns: number;
+
+const fakeSetupState = {
+  cli: "agentwatch",
+  autostart: { supported: true, installed: false },
+  notes: [],
+  tools: [],
+};
 
 beforeEach(async () => {
   store = new SessionStore();
   opened = [];
+  connects = [];
+  shutdowns = 0;
   server = createAppServer({
     config: {
       port: 0,
@@ -31,6 +43,17 @@ beforeEach(async () => {
       if (session.host !== "VS Code") return false;
       opened.push(session);
       return true;
+    },
+    setup: {
+      status: async () => fakeSetupState,
+      connect: async (tool, dryRun) => {
+        if (tool === "nope") throw new UnknownToolError(`Unknown tool "${tool}"`);
+        connects.push({ tool, dryRun });
+        return { results: [], setup: fakeSetupState };
+      },
+    },
+    onShutdown: () => {
+      shutdowns += 1;
     },
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -167,5 +190,42 @@ describe("app server", () => {
   it("does not serve files outside the static root", async () => {
     const res = await send("GET", "/..%2f..%2fpackage.json");
     expect(res.status).toBe(403);
+  });
+
+  it("reports setup status", async () => {
+    const res = await send("GET", "/api/setup");
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ cli: "agentwatch" });
+  });
+
+  it("only lets the dashboard itself connect tools (it edits agent configs)", async () => {
+    const body = { tool: "claude-code", dryRun: true };
+    expect((await send("POST", "/api/setup/connect", { body })).status).toBe(403);
+    expect((await send("POST", "/api/setup/connect", { headers: auth, body })).status).toBe(403);
+    const evil = { origin: "https://evil.example" };
+    expect((await send("POST", "/api/setup/connect", { headers: evil, body })).status).toBe(403);
+    expect(connects).toEqual([]);
+
+    const own = { origin: `http://127.0.0.1:${port}` };
+    expect((await send("POST", "/api/setup/connect", { headers: own, body })).status).toBe(200);
+    expect((await send("POST", "/api/setup/connect", { headers: own, body: { tool: "x" } })).status).toBe(
+      200,
+    );
+    expect(connects).toEqual([
+      { tool: "claude-code", dryRun: true },
+      { tool: "x", dryRun: false },
+    ]);
+    const unknown = await send("POST", "/api/setup/connect", { headers: own, body: { tool: "nope" } });
+    expect(unknown.status).toBe(400);
+  });
+
+  it("only lets the CLI (token, no browser origin) shut the server down", async () => {
+    const own = { origin: `http://127.0.0.1:${port}` };
+    expect((await send("POST", "/api/shutdown")).status).toBe(403);
+    expect((await send("POST", "/api/shutdown", { headers: own })).status).toBe(403);
+    expect((await send("POST", "/api/shutdown", { headers: { ...auth, ...own } })).status).toBe(403);
+    expect(shutdowns).toBe(0);
+    expect((await send("POST", "/api/shutdown", { headers: auth })).status).toBe(200);
+    expect(shutdowns).toBe(1);
   });
 });

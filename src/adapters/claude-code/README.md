@@ -7,7 +7,7 @@ front ends that read `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.
 
 ## Installed hooks
 
-`orchestrator install --tool claude-code` adds one `command` hook per event below to the user's `settings.json`, with
+`agentwatch install --tool claude-code` adds one `command` hook per event below to the user's `settings.json`, with
 `"async": true` so Claude Code runs it in the background and never waits on it.
 
 | Claude Code event | Status | Notes |
@@ -27,6 +27,29 @@ and leaves the rest of the file alone.
 
 From `CLAUDE_CODE_ENTRYPOINT`: `claude-vscode` → "VS Code" (verified), `cli` → the terminal detected from
 `TERM_PROGRAM` / `WT_SESSION`. Other values are passed through as-is until we've verified what they mean.
+
+## Task title
+
+The dashboard shows the same session name as VS Code's tab and Claude Code's session list. These sources are
+checked in order:
+
+1. `session_title`, a name the user set with `/rename` or `--name`. The hook docs only include it on
+   `SessionStart`.
+2. The generated title. Claude Code writes it to the transcript as `{"type":"ai-title","aiTitle":"…","sessionId":"…"}`
+   and appends it again as the session goes on. On every event except `SessionEnd`, the hook reads the last 256 KB of
+   `transcript_path` (about 3 ms on a 4.7 MB transcript) and takes the newest `aiTitle`. Every other line is
+   discarded without being parsed or stored.
+3. Until a title has been generated: the first line of the prompt, with IDE context such as
+   `<ide_opened_file>…</ide_opened_file>` removed.
+
+Titles from 1 and 2 are sent with `titleSource: "tool"`. They replace a prompt title and follow later changes,
+such as a new title after a plan is accepted.
+
+Not verified by docs: the transcript format is internal. The [sessions docs](https://code.claude.com/docs/en/sessions)
+say it "changes between versions", so this may stop working after a Claude Code update. It was checked against
+real transcripts from VS Code extension 2.1.300 on 2026-10-16. If it breaks, the dashboard falls back to the prompt
+title. Also not verified: how a `/rename` mid-session is stored in the transcript. Until the session is resumed, the
+generated title may still show.
 
 ## Opening a session
 

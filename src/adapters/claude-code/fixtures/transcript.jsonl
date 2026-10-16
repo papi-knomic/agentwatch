@@ -1,0 +1,7 @@
+{"type":"user","message":{"role":"user","content":"Write a function to calculate the factorial of a number"},"sessionId":"sess-demo-1"}
+{"type":"ai-title","aiTitle":"Factorial function","sessionId":"sess-demo-1"}
+{"type":"assistant","message":{"role":"assistant","content":"secret file content"},"sessionId":"sess-demo-1"}
+{"type":"last-prompt","sessionId":"sess-demo-1"}
+{"type":"ai-title","aiTitle":"Factorial function with memoization","sessionId":"sess-demo-1"}
+{"type":"assistant","message":{"role":"assistant","content":"refactoring done"},"sessionId":"sess-demo-1"}
+{"type":"ai-title","aiTitle":"Half-written ent

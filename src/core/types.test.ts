@@ -50,6 +50,20 @@ describe("titleFromPrompt", () => {
     expect(titleFromPrompt(undefined)).toBeUndefined();
   });
 
+  it("skips the IDE context the VS Code extension puts before the prompt", () => {
+    const opened =
+      "<ide_opened_file>The user opened the file c:\\app\\README.md in the IDE. This may or may not be related.</ide_opened_file>";
+    const selection = "<ide_selection>The user selected lines 1-3:\nconst a = 1;\n</ide_selection>";
+    expect(titleFromPrompt(`${opened}Fix the login bug\nmore`)).toBe("Fix the login bug");
+    expect(titleFromPrompt(`${opened}\n${selection}\n  Rename the helper`)).toBe("Rename the helper");
+    expect(titleFromPrompt(`${opened}/clear`)).toBeUndefined();
+    expect(titleFromPrompt(opened)).toBeUndefined();
+  });
+
+  it("keeps ordinary HTML at the start of a prompt", () => {
+    expect(titleFromPrompt("<b>bold</b> text renders wrong")).toBe("<b>bold</b> text renders wrong");
+  });
+
   it("is carried through HTTP validation, truncated", () => {
     expect(parseAgentEvent({ ...valid, title: "Fix login" })?.title).toBe("Fix login");
     expect(parseAgentEvent({ ...valid, title: "x".repeat(300) })?.title).toHaveLength(80);

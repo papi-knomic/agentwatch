@@ -41,16 +41,25 @@ describe("parsers", () => {
 });
 
 describe("live process listing", () => {
-  it("finds a child process of this test run", async () => {
-    const sleeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 15000)"], { stdio: "ignore" });
+  it("finds a child process of this test run, and answers repeat queries quickly", async () => {
+    const list = defaultListChildren();
+    const sleeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
     try {
-      const children = await defaultListChildren()([process.pid]);
+      const children = await list([process.pid]);
       const found = children.find((c) => c.pid === sleeper.pid);
       expect(found).toBeDefined();
       expect(found?.parentPid).toBe(process.pid);
-      expect(Math.abs((found?.startedAt ?? 0) - Date.now())).toBeLessThan(15_000);
+      expect(Math.abs((found?.startedAt ?? 0) - Date.now())).toBeLessThan(30_000);
+
+      // On Windows the first query starts the worker; later ones reuse it and must be fast.
+      const started = Date.now();
+      const again = await list([process.pid]);
+      expect(again.some((c) => c.pid === sleeper.pid)).toBe(true);
+      expect(Date.now() - started).toBeLessThan(3000);
+      expect(await list([])).toEqual([]);
     } finally {
       sleeper.kill();
+      if ("dispose" in list && typeof list.dispose === "function") list.dispose();
     }
-  }, 20_000);
+  }, 40_000);
 });

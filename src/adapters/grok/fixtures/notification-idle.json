@@ -1,0 +1,9 @@
+{
+  "hookEventName": "notification",
+  "sessionId": "grok-sess-1",
+  "cwd": "C:\\Users\\dev\\projects\\web",
+  "workspaceRoot": "C:\\Users\\dev\\projects\\web",
+  "message": "Waiting for your next prompt",
+  "hook_event_name": "Notification",
+  "session_id": "grok-sess-1"
+}

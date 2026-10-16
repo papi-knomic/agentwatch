@@ -9,15 +9,18 @@ A local, open-source dashboard and notifier for AI coding agents. When you run s
 (in VS Code, in a terminal, or in a desktop app), it shows every session in one browser page. It also sends a
 desktop notification when one needs your input or has finished. You can set notifications up differently for each tool.
 
-- **Status:** pre-alpha. Server, dashboard, Windows notifications and the Claude Code, Codex and Grok adapters work.
-- **Name:** "orchestrator" is a placeholder. Don't hard-code it in many places; keep the name in one constant
-  (`src/core/constants.ts`) and in `package.json` so it's easy to rename before the first release.
+- **Status:** 0.1. Server, dashboard, Windows notifications, start at login and the Claude Code, Codex and Grok adapters work.
+- **Name:** `agentwatch` (npm package and command; display name "AgentWatch"). Don't hard-code it: use `APP_NAME` /
+  `APP_DISPLAY_NAME` from `src/core/constants.ts`, kept in sync with `package.json`. The project was briefly called
+  `orchestrator`; `LEGACY_APP_NAMES` lets us find and clean up what was created under that name.
+- **Distribution:** `npm install -g agentwatch && agentwatch setup`. Hooks and start at login store the installed
+  CLI's absolute path, so installing from npx's cache is refused (`assertStableInstall`).
 - **License:** MIT.
 
 ## How it works
 
 ```
-agent hook ──▶ `orchestrator hook --tool <id>` ──HTTP POST──▶ local server (127.0.0.1)
+agent hook ──▶ `agentwatch hook --tool <id>` ───HTTP POST──▶ local server (127.0.0.1)
                                                                 ├─ session store (in memory + JSON file)
                                                                 ├─ SSE stream ──▶ browser dashboard
                                                                 └─ notifier ──▶ OS notification (per-tool settings)
@@ -68,7 +71,7 @@ same change.
    - always exit with code `0`. (In Claude Code, exit code `2` from a `Stop` hook makes Claude *keep going*.)
    - print nothing to stdout. Some tools read hook stdout as instructions.
    - finish within ~1s, even if the server is down (short request timeout, failures ignored).
-   - be safe to run when the orchestrator isn't running at all.
+   - be safe to run when the server isn't running at all.
 2. **Local only.** The server listens on `127.0.0.1` only. No telemetry, no analytics, no requests to the internet,
    no auto-update calls.
 3. **Treat localhost as unsafe.** Any website open in the user's browser can send requests to localhost. Require the token stored in
@@ -81,7 +84,7 @@ same change.
    `~/.grok/hooks/`, etc. must: add to what's there and never overwrite it, back it up first, be safe to run twice, support `--dry-run`,
    and have an `uninstall` that removes exactly what was added.
 6. **Never touch the real home directory in tests or while developing.** Point config paths at a temp folder
-   (`ORCHESTRATOR_HOME` / a fake home directory). Don't run `install` against the developer's own agent configs unless the
+   (`AGENTWATCH_HOME` / a fake home directory). Don't run `install` against the developer's own agent configs unless the
    user asks in that conversation.
 7. **Windows is fully supported.** Use `node:path`, never hard-coded `/`. Don't assume bash. Quote paths with spaces.
    Every feature must work on Windows, macOS and Linux, or say clearly where it doesn't.
@@ -120,7 +123,7 @@ npm run typecheck   # server and web
 npm run lint        # biome check; `npm run format` applies safe fixes
 ```
 
-Before saying work is done, run all four. For a manual end-to-end check, set `ORCHESTRATOR_HOME` to a temp folder, run
+Before saying work is done, run all four. For a manual end-to-end check, set `AGENTWATCH_HOME` to a temp folder (and a free `port` in its config.json), run
 `node dist/cli/index.js start`, and pipe a fixture into `node dist/cli/index.js hook --tool <id>`.
 
 ## Workflow
@@ -136,8 +139,9 @@ Before saying work is done, run all four. For a manual end-to-end check, set `OR
 - Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
   event for API-error stops.
 - Grok: payloads verified by capture (Grok 1.0.34): `hookEventName` is snake_case, with Claude-style duplicates, and an
-  extra `stop` (reason `shutdown`) arrives after `session_end`. `Notification` never fired in our captures, so its
-  `needs_input` mapping is still unverified.
+  extra `stop` (reason `shutdown`) arrives after `session_end`. `Notification` was seen live only as an idle ping
+  ("Waiting for your next prompt"), which is ignored. Only notification text that asks for a decision maps to
+  `needs_input`; a real Grok permission prompt has not been captured yet.
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.

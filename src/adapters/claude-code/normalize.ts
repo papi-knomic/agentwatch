@@ -9,6 +9,7 @@ import {
 import { detectTerminalHost } from "../shared/host.js";
 import type { NormalizeContext } from "../types.js";
 import { claudeCodeMeta } from "./meta.js";
+import { readAiTitle } from "./title.js";
 
 /** Notification types that mean "a human has to act before Claude can continue". */
 const NEEDS_INPUT_NOTIFICATIONS = new Set([
@@ -34,8 +35,7 @@ function statusFor(
 ): { status: AgentStatus; message?: string; title?: string | undefined } | null {
   switch (raw.hook_event_name) {
     case "SessionStart":
-      // session_title is only present when resuming a session that already has one.
-      return { status: "idle", title: truncateTitle(str(raw.session_title)) };
+      return { status: "idle" };
     case "UserPromptSubmit":
       return { status: "working", title: titleFromPrompt(str(raw.prompt)) };
     case "PostToolUse":
@@ -84,7 +84,17 @@ export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentE
   };
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
-  if (mapped.title) event.title = mapped.title;
+  // A name the user set (session_title: SessionStart only), else the generated one VS Code shows, else the
+  // prompt as a stand-in until Claude Code has generated a name.
+  const toolTitle =
+    truncateTitle(str(record.session_title)) ??
+    (mapped.status === "ended" ? undefined : readAiTitle(str(record.transcript_path)));
+  if (toolTitle) {
+    event.title = toolTitle;
+    event.titleSource = "tool";
+  } else if (mapped.title) {
+    event.title = mapped.title;
+  }
   const pid = parsePid(ctx.env.CLAUDE_PID);
   if (pid) event.pid = pid;
   const host = detectClaudeHost(ctx.env);

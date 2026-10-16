@@ -1,5 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { APP_NAME } from "../../src/core/constants.js";
+import { SetupPanel } from "./SetupPanel";
+import { useSetup } from "./setup";
 import {
   type Connection,
   dismissSession,
@@ -54,6 +56,9 @@ function useNow(intervalMs: number): number {
 
 export function App() {
   const { sessions, tools, connection } = useAgentStream();
+  const { setup, replace: replaceSetup } = useSetup();
+  // Older servers have no setup endpoint; the plain empty state covers that.
+  const readySetup = setup !== null && setup !== "unavailable" ? setup : null;
   const [filter, setFilter] = useState<string | null>(null);
   const now = useNow(15_000);
 
@@ -86,7 +91,7 @@ export function App() {
       </header>
 
       <main className="content">
-        {tools.length > 1 && (
+        {tools.length > 1 && sessions.length > 0 && (
           <nav className="filters" aria-label="Filter by tool">
             <FilterChip active={filter === null} onClick={() => setFilter(null)} label="All" />
             {tools.map((tool) => (
@@ -101,7 +106,9 @@ export function App() {
           </nav>
         )}
 
-        {visible.length === 0 ? (
+        {sessions.length === 0 && readySetup ? (
+          <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent />
+        ) : visible.length === 0 ? (
           <EmptyState connection={connection} filtered={filter !== null} />
         ) : (
           GROUPS.map((group) => {
@@ -129,6 +136,10 @@ export function App() {
               </section>
             );
           })
+        )}
+
+        {sessions.length > 0 && readySetup && (
+          <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent={false} />
         )}
       </main>
     </div>

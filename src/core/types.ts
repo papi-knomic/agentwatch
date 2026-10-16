@@ -7,6 +7,8 @@ export type AgentStatus = (typeof AGENT_STATUSES)[number];
 export const NOTIFIABLE_STATUSES = ["needs_input", "done", "error"] as const;
 export type NotifiableStatus = (typeof NOTIFIABLE_STATUSES)[number];
 
+export type TitleSource = "tool" | "prompt";
+
 /** The contract between adapters and core. Every tool's raw hook payload is normalized into this. */
 export interface AgentEvent {
   tool: string;
@@ -19,6 +21,12 @@ export interface AgentEvent {
    * The only prompt-derived data kept; users can turn it off with `taskTitles: false`.
    */
   title?: string;
+  /**
+   * "tool": the tool's own name for the session (generated or set by the user); it replaces any earlier
+   * title and stays current. "prompt" (the default): derived from a prompt; only fills in until the tool
+   * names the session, and the first one sticks.
+   */
+  titleSource?: TitleSource;
   /** Where the agent runs, e.g. "VS Code", "Windows Terminal", "Claude Desktop". */
   host?: string;
   /**
@@ -37,6 +45,7 @@ export interface Session {
   status: Exclude<AgentStatus, "ended">;
   message?: string;
   title?: string;
+  titleSource?: TitleSource;
   host?: string;
   pid?: number;
   startedAt: string;
@@ -64,10 +73,26 @@ export function truncateTitle(text: string | undefined): string | undefined {
   return firstLine.length > MAX_TITLE_LENGTH ? `${firstLine.slice(0, MAX_TITLE_LENGTH - 1)}…` : firstLine;
 }
 
+/**
+ * Context an IDE puts in front of the prompt, e.g. `<ide_opened_file>…</ide_opened_file>` or
+ * `<ide_selection>…</ide_selection>` from the Claude Code VS Code extension. Only tag names with `_` or `-`,
+ * so a prompt that starts with ordinary HTML like `<b>` keeps it.
+ */
+const LEADING_CONTEXT_BLOCK = /^\s*<([a-z]+[_-][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/i;
+
+function stripLeadingContext(prompt: string): string {
+  let rest = prompt;
+  for (let match = LEADING_CONTEXT_BLOCK.exec(rest); match; match = LEADING_CONTEXT_BLOCK.exec(rest)) {
+    rest = rest.slice(match[0].length);
+  }
+  return rest;
+}
+
 /** A task name from a prompt. Slash commands like /clear or /compact aren't tasks. */
 export function titleFromPrompt(prompt: string | undefined): string | undefined {
-  if (!prompt || prompt.trimStart().startsWith("/")) return undefined;
-  return truncateTitle(prompt);
+  const text = prompt === undefined ? undefined : stripLeadingContext(prompt);
+  if (!text || text.trimStart().startsWith("/")) return undefined;
+  return truncateTitle(text);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,6 +134,7 @@ export function parseAgentEvent(value: unknown): AgentEvent | null {
   if (message) event.message = message;
   const title = truncateTitle(typeof value.title === "string" ? value.title : undefined);
   if (title) event.title = title;
+  if (title && value.titleSource === "tool") event.titleSource = "tool";
   const pid = parsePid(value.pid);
   if (pid) event.pid = pid;
   const host = nonEmptyString(value.host, 64);

@@ -1,14 +1,15 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Sound } from "../core/config.js";
+import { WINDOWS_APP_ID } from "../core/constants.js";
 import { appHome } from "../core/paths.js";
 import { ensureStatusIcon } from "./icon.js";
 import { runProcess } from "./run.js";
 import type { DesktopNotification } from "./types.js";
 
-// Toasts need a registered app id. Until we ship our own Start Menu shortcut, borrow PowerShell's,
-// which is present on every Windows install (toasts show "Windows PowerShell" as the source).
-const APP_ID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
+// Toasts need a registered app id. `install` registers our own (see windows-identity.ts); until then,
+// or after uninstall, borrow PowerShell's, which every Windows install has ("Windows PowerShell" as the source).
+const FALLBACK_APP_ID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
 
 const SOUND_EVENTS: Record<Exclude<Sound, "silent">, string> = {
   default: "ms-winsoundevent:Notification.Default",
@@ -19,15 +20,18 @@ const SOUND_EVENTS: Record<Exclude<Sound, "silent">, string> = {
   alarm: "ms-winsoundevent:Notification.Looping.Alarm",
 };
 
-// The XML and app id travel in env vars, never spliced into the script, so no quoting/injection issues.
+// The XML and app ids travel in env vars, never spliced into the script, so no quoting/injection issues.
+// An unregistered app id makes toasts vanish silently, hence the check before using our own.
 const SCRIPT = `
 $ErrorActionPreference = 'Stop'
+$appId = $env:AGENT_TOAST_FALLBACK_APP_ID
+if (Test-Path -LiteralPath ('HKCU:\\Software\\Classes\\AppUserModelId\\' + $env:AGENT_TOAST_APP_ID)) { $appId = $env:AGENT_TOAST_APP_ID }
 [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
 [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
 $xml.LoadXml($env:AGENT_TOAST_XML)
 $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:AGENT_TOAST_APP_ID).Show($toast)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
 `;
 
 export function escapeXml(text: string): string {
@@ -89,6 +93,10 @@ export async function notifyWindows(notification: DesktopNotification): Promise<
   await runProcess(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
-    { AGENT_TOAST_XML: xml, AGENT_TOAST_APP_ID: APP_ID },
+    {
+      AGENT_TOAST_XML: xml,
+      AGENT_TOAST_APP_ID: WINDOWS_APP_ID,
+      AGENT_TOAST_FALLBACK_APP_ID: FALLBACK_APP_ID,
+    },
   );
 }

@@ -8,6 +8,8 @@ export interface AdapterMeta {
   color: string;
   sound: Sound;
   docsUrl: string;
+  /** Steps the user must take in the tool itself after installing, e.g. trusting new hooks. */
+  afterInstall?: string[];
 }
 
 export interface NormalizeContext {

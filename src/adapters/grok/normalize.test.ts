@@ -54,6 +54,19 @@ describe("normalizeGrok", () => {
     );
   });
 
+  it("ignores the idle ping Grok sends after a turn ends (seen live)", () => {
+    expect(normalizeGrok(fixture("notification-idle.json"), ctx)).toBeNull();
+  });
+
+  it("only treats notifications that ask for a decision as needing you", () => {
+    const base = { hookEventName: "notification", sessionId: "s", cwd: "/w" };
+    expect(normalizeGrok({ ...base, message: "Grok wants to run a command. Allow?" }, ctx)?.status).toBe(
+      "needs_input",
+    );
+    expect(normalizeGrok({ ...base, message: "Indexing finished" }, ctx)).toBeNull();
+    expect(normalizeGrok(base, ctx)).toBeNull();
+  });
+
   it("ignores the extra Stop Grok sends after the session shuts down", () => {
     expect(normalizeGrok(fixture("stop-shutdown.json"), ctx)).toBeNull();
   });

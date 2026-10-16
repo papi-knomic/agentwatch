@@ -1,6 +1,15 @@
-// The project name is a placeholder. Rename here (and in package.json) before the first release.
-export const APP_NAME = "orchestrator";
-export const APP_DISPLAY_NAME = "Orchestrator";
+// The npm package and command name. Keep in sync with package.json ("name" and "bin").
+export const APP_NAME = "agentwatch";
+export const APP_DISPLAY_NAME = "AgentWatch";
+
+/**
+ * Names this project shipped under before. Anything we created under them (state folder, Grok hook file,
+ * Windows app id) is still found and cleaned up.
+ */
+export const LEGACY_APP_NAMES = ["orchestrator"] as const;
+
+/** Windows app id that notifications are shown under once `install` has registered it. */
+export const WINDOWS_APP_ID = `${APP_NAME}.notifications`;
 
 /** Overrides where the app keeps its config and state (default: ~/.<APP_NAME>). */
 export const HOME_ENV_VAR = `${APP_NAME.toUpperCase()}_HOME`;

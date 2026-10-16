@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { detectClaudeHost, normalizeClaudeCode } from "./normalize.js";
 
@@ -69,6 +70,26 @@ describe("normalizeClaudeCode", () => {
     expect(normalizeClaudeCode(start, ctx)?.title).toBe("Fix login bug");
     const slash = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/compact" };
     expect(normalizeClaudeCode(slash, ctx)?.title).toBeUndefined();
+  });
+
+  it("prefers the name Claude Code generated (as shown in VS Code) over the prompt", () => {
+    const transcript_path = fileURLToPath(new URL("./fixtures/transcript.jsonl", import.meta.url));
+    const prompt = { ...(fixture("user-prompt-submit.json") as object), transcript_path };
+    expect(normalizeClaudeCode(prompt, ctx)).toMatchObject({
+      title: "Factorial function with memoization",
+      titleSource: "tool",
+    });
+    const stop = { ...(fixture("stop.json") as object), transcript_path };
+    expect(normalizeClaudeCode(stop, ctx)?.title).toBe("Factorial function with memoization");
+
+    const named = { ...stop, hook_event_name: "SessionStart", session_title: "My own name" };
+    expect(normalizeClaudeCode(named, ctx)).toMatchObject({ title: "My own name", titleSource: "tool" });
+  });
+
+  it("falls back to the prompt, marked as such, before a name is generated", () => {
+    const event = normalizeClaudeCode(fixture("user-prompt-submit.json"), ctx);
+    expect(event?.titleSource).toBeUndefined();
+    expect(normalizeClaudeCode(fixture("stop.json"), ctx)?.title).toBeUndefined();
   });
 
   it("rejects payloads without a session id or cwd", () => {

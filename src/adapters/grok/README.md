@@ -4,7 +4,8 @@ Official hook docs: https://docs.x.ai/build/features/hooks (checked 2026-10-16, 
 
 ## Installed hooks
 
-`orchestrator install --tool grok` writes **its own file**, `~/.grok/hooks/orchestrator.json`. Grok loads every
+`agentwatch install --tool grok` writes **its own file**, `~/.grok/hooks/agentwatch.json` (and removes a leftover
+`orchestrator.json` from the project's old name). Grok loads every
 `*.json` in that folder, so no file belonging to the user or another tool is edited. No backup is needed, and
 `uninstall` deletes the file.
 
@@ -13,7 +14,7 @@ Official hook docs: https://docs.x.ai/build/features/hooks (checked 2026-10-16, 
 | `SessionStart` | `idle` | |
 | `UserPromptSubmit` | `working` | The first prompt's first line becomes the task title (unless `taskTitles: false`). |
 | `PostToolUse`, `PostToolUseFailure` | `working` | |
-| `Notification` | `needs_input` | **Unverified**, see below. |
+| `Notification` | `needs_input` | Only if the message asks for a decision; idle pings are ignored. See below. |
 | `Stop` | `done` | Ignored when `reason` is `shutdown` (see below). |
 | `StopFailure` | `error` | |
 | `SessionEnd` | `ended` | |
@@ -49,9 +50,11 @@ constructed: those events never fired in our captures.
 
 ## Unverified (help wanted)
 
-- **`Notification`**: never fired in two `grok -p` runs (Grok ran `echo hello` without asking). We assume it means
-  "needs you", like Claude Code's permission prompts, and use its `message` field if present. If it also fires for
-  other things, this mapping needs narrowing. A capture from an interactive session that asks for permission would settle it.
+- **`Notification`**: seen live in an interactive session about a minute after `Stop`, with message
+  "Waiting for your next prompt", an idle ping (fixture `notification-idle.json`). That made sessions look like they
+  needed you, so now only messages that ask for a decision (permission, approve, allow, confirm, question, …) count
+  as `needs_input`, and everything else is ignored. A real Grok **permission prompt** hasn't been captured yet. Until
+  it is, Grok's "needs you" status is a best guess.
 - **`StopFailure`**: we read an `error` field if there is one.
 
 ## Known gaps

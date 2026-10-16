@@ -40,12 +40,20 @@ describe("SessionStore", () => {
     expect(store.get("claude-code:s1")?.status).toBe("done");
   });
 
-  it("keeps the last message while working, clears it on idle", () => {
+  it("never carries a message over to the next event", () => {
     const store = new SessionStore();
     store.apply(event({ status: "needs_input", message: "Permission for Bash" }));
     store.apply(event({ status: "working", timestamp: "2026-10-16T12:00:01.000Z" }));
-    expect(store.get("claude-code:s1")?.message).toBe("Permission for Bash");
-    store.apply(event({ status: "idle", timestamp: "2026-10-16T12:00:02.000Z" }));
+    expect(store.get("claude-code:s1")?.message).toBeUndefined();
+    store.apply(
+      event({
+        status: "working",
+        message: "Running approved command",
+        timestamp: "2026-10-16T12:00:02.000Z",
+      }),
+    );
+    expect(store.get("claude-code:s1")?.message).toBe("Running approved command");
+    store.apply(event({ status: "done", timestamp: "2026-10-16T12:00:03.000Z" }));
     expect(store.get("claude-code:s1")?.message).toBeUndefined();
   });
 
@@ -56,6 +64,24 @@ describe("SessionStore", () => {
     store.apply(event({ status: "done", timestamp: "2026-10-16T12:00:02.000Z" }));
     store.apply(event({ title: "Also update the docs", timestamp: "2026-10-16T12:00:03.000Z" }));
     expect(store.get("claude-code:s1")?.title).toBe("Fix login bug");
+  });
+
+  it("lets the tool's own session name replace a prompt title and stay current", () => {
+    const store = new SessionStore();
+    store.apply(event({ title: "can you look at the login thing", timestamp: "2026-10-16T12:00:01.000Z" }));
+    store.apply(
+      event({ title: "Fix login bug", titleSource: "tool", timestamp: "2026-10-16T12:00:02.000Z" }),
+    );
+    expect(store.get("claude-code:s1")).toMatchObject({ title: "Fix login bug", titleSource: "tool" });
+
+    store.apply(event({ title: "another prompt", timestamp: "2026-10-16T12:00:03.000Z" }));
+    store.apply(event({ status: "done", timestamp: "2026-10-16T12:00:04.000Z" }));
+    expect(store.get("claude-code:s1")).toMatchObject({ title: "Fix login bug", titleSource: "tool" });
+
+    store.apply(
+      event({ title: "Plan: OAuth login", titleSource: "tool", timestamp: "2026-10-16T12:00:05.000Z" }),
+    );
+    expect(store.get("claude-code:s1")?.title).toBe("Plan: OAuth login");
   });
 
   it("removes the session when it ends", () => {

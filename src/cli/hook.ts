@@ -22,7 +22,10 @@ export async function runHook(toolId: string | undefined, argPayload: string | u
     const config = await readConfig(toolDefaults());
     if (!config || config.tools[toolId]?.enabled === false) return;
     // Dropped here, before it leaves the hook, so with titles off no prompt text reaches the server.
-    if (config.taskTitles === false) delete event.title;
+    if (config.taskTitles === false) {
+      delete event.title;
+      delete event.titleSource;
+    }
 
     await fetch(`http://127.0.0.1:${config.port}/api/events`, {
       method: "POST",
