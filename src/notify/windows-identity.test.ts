@@ -53,14 +53,14 @@ describe("parseRegQuery", () => {
     const stdout = [
       "",
       "HKEY_CURRENT_USER\\Software\\Classes\\AppUserModelId\\demo",
-      "    DisplayName    REG_SZ    Orchestrator",
-      "    IconUri    REG_SZ    C:\\Users\\A User\\.orchestrator\\icons\\app-v1.ico",
+      "    DisplayName    REG_SZ    AgentWatch",
+      "    IconUri    REG_SZ    C:\\Users\\A User\\.agentwatch\\icons\\app-v1.ico",
       "    Empty    REG_SZ    ",
       "",
     ].join("\r\n");
     expect(parseRegQuery(stdout)).toEqual({
-      DisplayName: "Orchestrator",
-      IconUri: "C:\\Users\\A User\\.orchestrator\\icons\\app-v1.ico",
+      DisplayName: "AgentWatch",
+      IconUri: "C:\\Users\\A User\\.agentwatch\\icons\\app-v1.ico",
       Empty: "",
     });
   });
@@ -84,25 +84,6 @@ describe("Windows notification identity", () => {
     const second = await registerWindowsAppId({ dryRun: false, iconDir: dir, reg });
     expect(second).toEqual({ changed: false, summary: [] });
     expect(calls.every((c) => c[0] === "query")).toBe(true); // only looked, never wrote
-  });
-
-  it("removes the key registered under the old project name", async () => {
-    dir = await mkdtemp(join(tmpdir(), "identity-"));
-    const { keys, reg } = fakeRegistry();
-    const legacy = "HKCU\\Software\\Classes\\AppUserModelId\\orchestrator.notifications";
-    keys.set(legacy, new Map([["DisplayName", "Orchestrator"]]));
-
-    const preview = await registerWindowsAppId({ dryRun: true, iconDir: dir, reg });
-    expect(preview.summary).toContain(`remove old ${legacy}`);
-    expect(keys.has(legacy)).toBe(true);
-
-    await registerWindowsAppId({ dryRun: false, iconDir: dir, reg });
-    expect(keys.has(legacy)).toBe(false);
-    expect(keys.has(WINDOWS_APP_KEY)).toBe(true);
-
-    keys.set(legacy, new Map([["DisplayName", "Orchestrator"]]));
-    await unregisterWindowsAppId({ dryRun: false, reg });
-    expect(keys.size).toBe(0);
   });
 
   it("writes nothing on a dry run", async () => {

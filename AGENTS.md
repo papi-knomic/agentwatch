@@ -11,8 +11,7 @@ desktop notification when one needs your input or has finished. You can set noti
 
 - **Status:** 0.1. Server, dashboard, Windows notifications, start at login and the Claude Code, Codex and Grok adapters work.
 - **Name:** `agentwatch` (npm package and command; display name "AgentWatch"). Don't hard-code it: use `APP_NAME` /
-  `APP_DISPLAY_NAME` from `src/core/constants.ts`, kept in sync with `package.json`. The project was briefly called
-  `orchestrator`; `LEGACY_APP_NAMES` lets us find and clean up what was created under that name.
+  `APP_DISPLAY_NAME` from `src/core/constants.ts`, kept in sync with `package.json`.
 - **Distribution:** `npm install -g @kn0mic/agentwatch && agentwatch setup`. The package is scoped because npm
   rejected unscoped `agentwatch` as too similar to `agent-watch`; the command is still `agentwatch` (`PACKAGE_NAME`
   vs `APP_NAME` in constants.ts). Hooks and start at login store the installed

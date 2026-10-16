@@ -1,7 +1,7 @@
 import { getAdapter, toolDefaults } from "../adapters/index.js";
 import { ensureConfig } from "../core/config.js";
 import { APP_DISPLAY_NAME, APP_NAME } from "../core/constants.js";
-import { configPath, migrateLegacyHome, sessionsPath } from "../core/paths.js";
+import { configPath, sessionsPath } from "../core/paths.js";
 import { SessionStore } from "../core/store.js";
 import { createNotifier } from "../notify/index.js";
 import { createApprovalWatcher } from "../server/approval-watch.js";
@@ -30,7 +30,6 @@ export async function start(options: {
     return;
   }
 
-  migrateLegacyHome();
   const config = await ensureConfig(toolDefaults());
   const url = `http://127.0.0.1:${config.port}`;
 

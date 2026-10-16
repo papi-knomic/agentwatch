@@ -3,7 +3,6 @@ import { adapters, getAdapter, toolDefaults } from "../adapters/index.js";
 import type { Adapter } from "../adapters/types.js";
 import { ensureConfig } from "../core/config.js";
 import { APP_NAME } from "../core/constants.js";
-import { migrateLegacyHome } from "../core/paths.js";
 import { registerWindowsAppId, unregisterWindowsAppId, WINDOWS_APP_KEY } from "../notify/windows-identity.js";
 import { buildHookCommand } from "./hook-command.js";
 import { openUrl } from "./open.js";
@@ -30,10 +29,6 @@ export async function installCommand(options: {
 }): Promise<void> {
   const targets = resolveTargets(options.tool);
   if (!options.uninstall && !options.home) assertStableInstall(options.cliPath);
-  if (!options.dryRun && !options.home) {
-    const moved = migrateLegacyHome();
-    if (moved) console.log(`Moved ${moved} to the new location.`);
-  }
   // The hook needs the token from the config, so make sure it exists before agents start calling it.
   if (!options.uninstall && !options.dryRun) await ensureConfig(toolDefaults());
 

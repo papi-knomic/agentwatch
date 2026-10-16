@@ -4,8 +4,7 @@ Official hook docs: https://docs.x.ai/build/features/hooks (checked 2026-10-16, 
 
 ## Installed hooks
 
-`agentwatch install --tool grok` writes **its own file**, `~/.grok/hooks/agentwatch.json` (and removes a leftover
-`orchestrator.json` from the project's old name). Grok loads every
+`agentwatch install --tool grok` writes **its own file**, `~/.grok/hooks/agentwatch.json`. Grok loads every
 `*.json` in that folder, so no file belonging to the user or another tool is edited. No backup is needed, and
 `uninstall` deletes the file.
 

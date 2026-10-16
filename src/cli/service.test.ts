@@ -24,7 +24,7 @@ describe("assertStableInstall", () => {
       assertStableInstall(join("C:", "nvm4w", "nodejs", "node_modules", "agentwatch", "x.js")),
     ).not.toThrow();
     expect(() =>
-      assertStableInstall(join("C:", "research", "orchestrator", "dist", "cli", "index.js")),
+      assertStableInstall(join("C:", "code", "agentwatch", "dist", "cli", "index.js")),
     ).not.toThrow();
   });
 });

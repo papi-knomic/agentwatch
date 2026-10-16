@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { APP_DISPLAY_NAME, LEGACY_APP_NAMES, WINDOWS_APP_ID } from "../core/constants.js";
+import { APP_DISPLAY_NAME, WINDOWS_APP_ID } from "../core/constants.js";
 import { appHome } from "../core/paths.js";
 import { APP_ICON_FILE, ensureAppIcon } from "./icon.js";
 
@@ -10,21 +10,6 @@ import { APP_ICON_FILE, ensureAppIcon } from "./icon.js";
  * register_hkey_aumid.py writes (DisplayName and IconUri, both REG_SZ), and was verified by hand on Windows 11.
  */
 export const WINDOWS_APP_KEY = `HKCU\\Software\\Classes\\AppUserModelId\\${WINDOWS_APP_ID}`;
-
-/** Keys registered under earlier project names; removed by both register and unregister. */
-export const LEGACY_WINDOWS_APP_KEYS = LEGACY_APP_NAMES.map(
-  (name) => `HKCU\\Software\\Classes\\AppUserModelId\\${name}.notifications`,
-);
-
-async function removeLegacyKeys(reg: RegRunner, dryRun: boolean): Promise<string[]> {
-  const summary: string[] = [];
-  for (const key of LEGACY_WINDOWS_APP_KEYS) {
-    if ((await reg(["query", key])).code !== 0) continue;
-    if (!dryRun && (await reg(["delete", key, "/f"])).code !== 0) throw new Error(`Could not remove ${key}`);
-    summary.push(`remove old ${key}`);
-  }
-  return summary;
-}
 
 export interface RegResult {
   code: number;
@@ -85,20 +70,15 @@ export async function registerWindowsAppId(options: IdentityOptions): Promise<Id
       if (result.code !== 0) throw new Error(`Could not write ${name} under ${WINDOWS_APP_KEY}`);
     }
   }
-  summary.push(...(await removeLegacyKeys(reg, options.dryRun)));
   return { changed: summary.length > 0, summary };
 }
 
-/** Removes exactly the key that registerWindowsAppId creates, plus keys from earlier project names. */
+/** Removes exactly the key that registerWindowsAppId creates. */
 export async function unregisterWindowsAppId(options: IdentityOptions): Promise<IdentityResult> {
   const reg = options.reg ?? runReg;
-  const summary: string[] = [];
-  if ((await reg(["query", WINDOWS_APP_KEY])).code === 0) {
-    if (!options.dryRun && (await reg(["delete", WINDOWS_APP_KEY, "/f"])).code !== 0) {
-      throw new Error(`Could not remove ${WINDOWS_APP_KEY}`);
-    }
-    summary.push(`remove ${WINDOWS_APP_KEY}`);
+  if ((await reg(["query", WINDOWS_APP_KEY])).code !== 0) return { changed: false, summary: [] };
+  if (!options.dryRun && (await reg(["delete", WINDOWS_APP_KEY, "/f"])).code !== 0) {
+    throw new Error(`Could not remove ${WINDOWS_APP_KEY}`);
   }
-  summary.push(...(await removeLegacyKeys(reg, options.dryRun)));
-  return { changed: summary.length > 0, summary };
+  return { changed: true, summary: [`remove ${WINDOWS_APP_KEY}`] };
 }

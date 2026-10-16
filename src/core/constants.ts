@@ -4,12 +4,6 @@ export const APP_DISPLAY_NAME = "AgentWatch";
 /** The npm package (package.json "name"). npm rejected unscoped "agentwatch" as too close to "agent-watch". */
 export const PACKAGE_NAME = "@kn0mic/agentwatch";
 
-/**
- * Names this project shipped under before. Anything we created under them (state folder, Grok hook file,
- * Windows app id) is still found and cleaned up.
- */
-export const LEGACY_APP_NAMES = ["orchestrator"] as const;
-
 /** Windows app id that notifications are shown under once `install` has registered it. */
 export const WINDOWS_APP_ID = `${APP_NAME}.notifications`;
 

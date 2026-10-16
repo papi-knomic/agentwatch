@@ -39,11 +39,11 @@ describe("buildToastXml", () => {
         attribution: "Claude Code · VS Code",
         actions: [{ label: "Open dashboard", url: "http://127.0.0.1:7878" }],
       },
-      "file:///C:/Users/dev/.orchestrator/icons/d97757-needs_input.png",
+      "file:///C:/Users/dev/.agentwatch/icons/d97757-needs_input.png",
     );
     expect(xml).toContain(`<text placement="attribution">Claude Code · VS Code</text>`);
     expect(xml).toContain(
-      `<image placement="appLogoOverride" hint-crop="circle" src="file:///C:/Users/dev/.orchestrator/icons/d97757-needs_input.png"/>`,
+      `<image placement="appLogoOverride" hint-crop="circle" src="file:///C:/Users/dev/.agentwatch/icons/d97757-needs_input.png"/>`,
     );
     expect(xml).toContain(
       `<actions><action content="Open dashboard" activationType="protocol" arguments="http://127.0.0.1:7878"/></actions>`,

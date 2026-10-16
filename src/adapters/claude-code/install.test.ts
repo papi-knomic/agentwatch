@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InstallOptions } from "../types.js";
 import { CLAUDE_HOOK_EVENTS, claudeSettingsPath, installClaudeCode, uninstallClaudeCode } from "./install.js";
 
-const HOOK = 'node "C:/tools/orchestrator/dist/cli/index.js" hook --tool claude-code';
+const HOOK = 'node "C:/tools/agentwatch/dist/cli/index.js" hook --tool claude-code';
 
 const EXISTING = {
   model: "opus",

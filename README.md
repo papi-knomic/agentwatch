@@ -198,13 +198,6 @@ the session switches to "working · Running approved command", usually within a 
   "needs input" until the command finishes. The same goes for Claude Code permission prompts that don't run a shell (e.g.
   file edits), but those finish almost instantly.
 
-## Upgrading from "orchestrator"
-
-This project was briefly called `orchestrator`. Run `agentwatch setup` (or `agentwatch install --tool all`) once. It:
-- moves `~/.orchestrator` to `~/.agentwatch`, keeping your token;
-- replaces the old Grok hook file;
-- re-registers Windows notifications under the new name.
-
 ## Development
 
 ```sh
