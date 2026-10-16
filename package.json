@@ -13,6 +13,14 @@
     "vscode"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/papi-knomic/agentwatch.git"
+  },
+  "homepage": "https://github.com/papi-knomic/agentwatch#readme",
+  "bugs": {
+    "url": "https://github.com/papi-knomic/agentwatch/issues"
+  },
   "publishConfig": {
     "access": "public"
   },

@@ -208,7 +208,7 @@ This project was briefly called `orchestrator`. Run `agentwatch setup` (or `agen
 ## Development
 
 ```sh
-git clone <this repo> agentwatch && cd agentwatch
+git clone https://github.com/papi-knomic/agentwatch.git && cd agentwatch
 npm install
 npm run build       # server (tsc) + dashboard (vite) into dist/
 npm test            # vitest
