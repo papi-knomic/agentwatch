@@ -1,5 +1,18 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
-import { APP_NAME } from "../../src/core/constants.js";
+import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
+import {
+  groupByProject,
+  isFinished,
+  isStalled,
+  needsApprovalHint,
+  needsYou,
+  type Project,
+  projectName,
+  type Status,
+  sortByUrgency,
+  statusDuration,
+  statusSince,
+} from "./board";
 import { SetupPanel } from "./SetupPanel";
 import { useSetup } from "./setup";
 import {
@@ -11,15 +24,6 @@ import {
   useAgentStream,
 } from "./useAgentStream";
 
-type Status = Session["status"];
-
-const GROUPS: { id: string; title: string; statuses: Status[] }[] = [
-  { id: "attention", title: "Needs you", statuses: ["needs_input", "error"] },
-  { id: "working", title: "Working", statuses: ["working"] },
-  { id: "done", title: "Done", statuses: ["done"] },
-  { id: "idle", title: "Idle", statuses: ["idle"] },
-];
-
 const STATUS_LABEL: Record<Status, string> = {
   needs_input: "Needs input",
   error: "Error",
@@ -27,23 +31,6 @@ const STATUS_LABEL: Record<Status, string> = {
   working: "Working",
   idle: "Idle",
 };
-
-function projectName(cwd: string): string {
-  return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
-}
-
-function sessionTitle(session: Session): string | undefined {
-  return session.title?.trim() ? session.title : undefined;
-}
-
-function timeAgo(iso: string, now: number): string {
-  const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (seconds < 45) return "now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
-}
 
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(Date.now());
@@ -54,24 +41,49 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
+/** A per-browser preference; falls back to the default when storage is unavailable. */
+function useStoredFlag(key: string, fallback: boolean): [boolean, (value: boolean) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored === null ? fallback : stored === "true";
+    } catch {
+      return fallback;
+    }
+  });
+  const update = (next: boolean) => {
+    setValue(next);
+    try {
+      localStorage.setItem(key, String(next));
+    } catch {
+      // Only a convenience.
+    }
+  };
+  return [value, update];
+}
+
 export function App() {
   const { sessions, tools, connection } = useAgentStream();
   const { setup, replace: replaceSetup } = useSetup();
   // Older servers have no setup endpoint; the plain empty state covers that.
   const readySetup = setup !== null && setup !== "unavailable" ? setup : null;
-  const [filter, setFilter] = useState<string | null>(null);
+  const [hideFinished, setHideFinished] = useStoredFlag("hide-finished", false);
+  const [collapsedProjects, toggleProject] = useCollapsedProjects();
   const now = useNow(15_000);
 
   const toolById = useMemo(() => new Map(tools.map((t) => [t.id, t])), [tools]);
-  const visible = filter ? sessions.filter((s) => s.tool === filter) : sessions;
-  const count = (statuses: Status[]) => sessions.filter((s) => statuses.includes(s.status)).length;
-  const attention = count(["needs_input", "error"]);
+  const attention = sortByUrgency(sessions.filter(needsYou));
+  const finished = sessions.filter(isFinished);
+  const projects = groupByProject(sessions.filter((s) => !needsYou(s) && !(hideFinished && isFinished(s))));
   // A tag that says the same thing on every row is noise.
-  const showTool = new Set(visible.map((s) => s.tool)).size > 1;
+  const showTool = new Set(sessions.map((s) => s.tool)).size > 1;
+  const count = (status: Status) => sessions.filter((s) => s.status === status).length;
 
   useEffect(() => {
-    document.title = attention > 0 ? `(${attention}) Agents` : "Agents";
-  }, [attention]);
+    document.title = attention.length > 0 ? `(${attention.length}) ${APP_DISPLAY_NAME}` : APP_DISPLAY_NAME;
+  }, [attention.length]);
+
+  const rowProps = { toolById, showTool, now };
 
   return (
     <div className="app">
@@ -79,67 +91,71 @@ export function App() {
         <div className="topbar-inner">
           <div className="brand">
             <Logo />
-            <span>Agents</span>
+            <span>{APP_DISPLAY_NAME}</span>
           </div>
           <div className="counts">
-            <Count tone="attention" value={attention} label="need you" />
-            <Count tone="working" value={count(["working"])} label="working" />
-            <Count tone="done" value={count(["done"])} label="done" />
+            <Count tone="attention" value={attention.length} label="need you" />
+            <Count tone="working" value={count("working")} label="working" />
+            <Count tone="done" value={finished.length} label="done" />
           </div>
+          {finished.length > 0 && (
+            <button
+              type="button"
+              className={hideFinished ? "toggle on" : "toggle"}
+              aria-pressed={hideFinished}
+              onClick={() => setHideFinished(!hideFinished)}
+            >
+              Hide finished
+            </button>
+          )}
           <ConnectionBadge connection={connection} />
         </div>
       </header>
 
       <main className="content">
-        {tools.length > 1 && sessions.length > 0 && (
-          <nav className="filters" aria-label="Filter by tool">
-            <FilterChip active={filter === null} onClick={() => setFilter(null)} label="All" />
-            {tools.map((tool) => (
-              <FilterChip
-                key={tool.id}
-                active={filter === tool.id}
-                onClick={() => setFilter(tool.id)}
-                label={tool.label}
-                color={tool.color}
-              />
-            ))}
-          </nav>
-        )}
-
-        {sessions.length === 0 && readySetup ? (
-          <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent />
-        ) : visible.length === 0 ? (
-          <EmptyState connection={connection} filtered={filter !== null} />
+        {sessions.length === 0 ? (
+          readySetup ? (
+            <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent />
+          ) : (
+            <EmptyState connection={connection} />
+          )
         ) : (
-          GROUPS.map((group) => {
-            const items = visible
-              .filter((s) => group.statuses.includes(s.status))
-              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-            if (items.length === 0) return null;
-            return (
-              <section key={group.id} className={`group group-${group.id}`}>
-                <h2 className="group-head">
-                  {group.title}
-                  <span className="group-count">{items.length}</span>
+          <>
+            {attention.length > 0 && (
+              <section className="lane" aria-labelledby="lane-title">
+                <h2 id="lane-title" className="lane-head">
+                  Needs you <span className="lane-count">{attention.length}</span>
                 </h2>
                 <ul className="rows">
-                  {items.map((session) => (
-                    <SessionRow
-                      key={session.key}
-                      session={session}
-                      tool={toolById.get(session.tool)}
-                      showTool={showTool}
-                      now={now}
-                    />
+                  {attention.map((session) => (
+                    <SessionRow key={session.key} session={session} showProject {...rowProps} />
                   ))}
                 </ul>
               </section>
-            );
-          })
-        )}
+            )}
 
-        {sessions.length > 0 && readySetup && (
-          <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent={false} />
+            {/* Sessions that need you are in the lane above, so collapsing a folder never hides them. */}
+            {projects.map((project) => (
+              <ProjectCard
+                key={project.key}
+                project={project}
+                collapsed={collapsedProjects.has(project.key)}
+                onToggle={() => toggleProject(project.key)}
+                {...rowProps}
+              />
+            ))}
+
+            {hideFinished && finished.length > 0 && (
+              <p className="hidden-note">
+                {finished.length} finished {finished.length === 1 ? "session" : "sessions"} hidden ·{" "}
+                <button type="button" className="text-button" onClick={() => setHideFinished(false)}>
+                  Show
+                </button>
+              </p>
+            )}
+
+            {readySetup && <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent={false} />}
+          </>
         )}
       </main>
     </div>
@@ -177,17 +193,95 @@ function ConnectionBadge({ connection }: { connection: Connection }) {
   );
 }
 
-function FilterChip(props: { active: boolean; onClick: () => void; label: string; color?: string }) {
+interface RowContext {
+  toolById: Map<string, ToolInfo>;
+  showTool: boolean;
+  now: number;
+}
+
+/** Collapsed project folders, remembered per browser by project key. */
+function useCollapsedProjects(): [Set<string>, (key: string) => void] {
+  const STORAGE_KEY = "collapsed-projects";
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+      return new Set(Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggle = (key: string) => {
+    const next = new Set(collapsed);
+    if (!next.delete(key)) next.add(key);
+    setCollapsed(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
+    } catch {
+      // Only a convenience.
+    }
+  };
+  return [collapsed, toggle];
+}
+
+const SUMMARY_PARTS: [Status, string][] = [
+  ["working", "working"],
+  ["idle", "idle"],
+  ["done", "done"],
+];
+
+/** Stays visible when the folder is collapsed, so it still says what's going on inside. */
+function ProjectSummary({ sessions }: { sessions: Session[] }) {
+  const parts = SUMMARY_PARTS.map(
+    ([status, label]) => [status, sessions.filter((s) => s.status === status).length, label] as const,
+  ).filter(([, n]) => n > 0);
   return (
-    <button
-      type="button"
-      className={props.active ? "chip active" : "chip"}
-      aria-pressed={props.active}
-      onClick={props.onClick}
-    >
-      {props.color && <span className="chip-dot" style={{ background: props.color }} />}
-      {props.label}
-    </button>
+    <span className="project-summary">
+      {parts.map(([status, n, label]) => (
+        <span key={status} className={`summary-part tone-${status}`}>
+          <span className="summary-dot" />
+          {n} {label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ProjectCard({
+  project,
+  collapsed,
+  onToggle,
+  ...context
+}: { project: Project; collapsed: boolean; onToggle: () => void } & RowContext) {
+  const rowsId = `rows-${project.key.replace(/[^a-z0-9]/gi, "-")}`;
+  return (
+    <section className={collapsed ? "project collapsed" : "project"} aria-label={project.name}>
+      <button
+        type="button"
+        className="project-head"
+        aria-expanded={!collapsed}
+        aria-controls={rowsId}
+        onClick={onToggle}
+      >
+        <svg className="chevron" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6 4l4 4-4 4" />
+        </svg>
+        <svg className="folder" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M1.75 4.25c0-.69.56-1.25 1.25-1.25h3.1l1.5 1.5H13c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H3c-.69 0-1.25-.56-1.25-1.25z" />
+        </svg>
+        <span className="project-name">{project.name}</span>
+        <span className="project-path" title={project.cwd}>
+          {project.cwd}
+        </span>
+        <ProjectSummary sessions={project.sessions} />
+      </button>
+      {!collapsed && (
+        <ul className="rows" id={rowsId}>
+          {project.sessions.map((session) => (
+            <SessionRow key={session.key} session={session} showProject={false} {...context} />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -232,47 +326,68 @@ function StatusIcon({ status }: { status: Status }) {
   }
 }
 
-function SessionRow(props: { session: Session; tool: ToolInfo | undefined; showTool: boolean; now: number }) {
-  const { session, tool, now } = props;
+/** What the row says under its title. Finished and idle rows need nothing beyond their time. */
+function detailFor(session: Session): string | undefined {
+  switch (session.status) {
+    case "needs_input":
+      return session.message ?? "Waiting for your input";
+    case "error":
+      return session.message ?? "Stopped with an error";
+    case "working":
+      return session.message;
+    default:
+      return undefined;
+  }
+}
+
+function SessionRow({
+  session,
+  toolById,
+  showTool,
+  showProject,
+  now,
+}: { session: Session; showProject: boolean } & RowContext) {
+  const tool = toolById.get(session.tool);
   const project = projectName(session.cwd);
-  const title = sessionTitle(session);
-  const color = tool?.color ?? "var(--muted)";
+  const title = session.title?.trim() ? session.title : undefined;
+  const name = title ?? (showProject ? project : "Untitled session");
+  const detail = detailFor(session);
+  const stalled = isStalled(session);
+  const source = [showTool ? (tool?.label ?? session.tool) : undefined, session.host].filter(Boolean);
+
   return (
-    <li className={`row status-${session.status}`} style={{ "--tool": color } as CSSProperties}>
+    <li
+      className={`row status-${session.status}${stalled ? " stalled" : ""}`}
+      style={{ "--tool": tool?.color ?? "var(--muted)" } as CSSProperties}
+    >
       <StatusIcon status={session.status} />
       <div className="row-main">
         <div className="row-title">
-          <span className="row-name" title={title ?? session.cwd}>
-            {title ?? project}
+          <span className={title ? "row-name" : "row-name untitled"} title={title ?? session.cwd}>
+            {name}
           </span>
-          {title && (
+          {showProject && title && (
             <span className="row-project" title={session.cwd}>
               {project}
             </span>
           )}
+          {stalled && (
+            <span className="badge badge-warn" title="No events for 10 minutes or more">
+              No activity
+            </span>
+          )}
         </div>
-        {session.message ? (
-          <p className="row-message">{session.message}</p>
-        ) : (
-          <p className="row-path">{session.cwd}</p>
+        {detail && <p className="row-detail">{detail}</p>}
+        {needsApprovalHint(session) && (
+          <p className="row-hint">Approved it? This updates when the command finishes.</p>
         )}
       </div>
       <div className="row-meta">
-        {props.showTool && (
-          <span className="tool-tag">
-            <span className="tool-dot" />
-            {tool?.label ?? session.tool}
-          </span>
-        )}
-        {session.host && <span className="host">{session.host}</span>}
+        <span className="row-since" title={new Date(statusSince(session)).toLocaleString()}>
+          {statusDuration(session, now)}
+        </span>
+        {source.length > 0 && <span className="row-source">{source.join(" · ")}</span>}
       </div>
-      <time
-        className="row-time"
-        dateTime={session.updatedAt}
-        title={new Date(session.updatedAt).toLocaleString()}
-      >
-        {timeAgo(session.updatedAt, now)}
-      </time>
       <div className="row-actions">
         {/* Terminal tabs can't be focused from outside, so only VS Code sessions get a button. */}
         {session.host?.startsWith("VS Code") && <OpenButton sessionKey={session.key} />}
@@ -280,7 +395,7 @@ function SessionRow(props: { session: Session; tool: ToolInfo | undefined; showT
           type="button"
           className="icon-button dismiss"
           title="Dismiss"
-          aria-label={`Dismiss ${title ?? project}`}
+          aria-label={`Dismiss ${name}`}
           onClick={() => void dismissSession(session.key)}
         >
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -331,18 +446,11 @@ function OpenButton({ sessionKey }: { sessionKey: string }) {
   );
 }
 
-function EmptyState({ connection, filtered }: { connection: Connection; filtered: boolean }) {
+function EmptyState({ connection }: { connection: Connection }) {
   if (connection !== "live") {
     return (
       <div className="empty">
         <p className="empty-lead">Connecting to the local server…</p>
-      </div>
-    );
-  }
-  if (filtered) {
-    return (
-      <div className="empty">
-        <p className="empty-lead">No sessions for this tool right now.</p>
       </div>
     );
   }

@@ -14,7 +14,7 @@ Official hook docs: https://docs.x.ai/build/features/hooks (checked 2026-10-16, 
 | `SessionStart` | `idle` | |
 | `UserPromptSubmit` | `working` | The first prompt's first line becomes the task title (unless `taskTitles: false`). |
 | `PostToolUse`, `PostToolUseFailure` | `working` | |
-| `Notification` | `needs_input` | Only if the message asks for a decision; idle pings are ignored. See below. |
+| `Notification` | `needs_input` | Only for `notificationType: "permission_prompt"` (verified) and the other "a human must act" types Claude Code uses; idle pings are ignored. |
 | `Stop` | `done` | Ignored when `reason` is `shutdown` (see below). |
 | `StopFailure` | `error` | |
 | `SessionEnd` | `ended` | |
@@ -48,14 +48,17 @@ as Claude Code.
 and ids replaced. `post-tool-use` was rebuilt from the captured field list. `notification` and `stop-failure` are still
 constructed: those events never fired in our captures.
 
-## Unverified (help wanted)
+## Notifications and what's still unverified
 
-- **`Notification`**: seen live in an interactive session about a minute after `Stop`, with message
-  "Waiting for your next prompt", an idle ping (fixture `notification-idle.json`). That made sessions look like they
-  needed you, so now only messages that ask for a decision (permission, approve, allow, confirm, question, …) count
-  as `needs_input`, and everything else is ignored. A real Grok **permission prompt** hasn't been captured yet. Until
-  it is, Grok's "needs you" status is a best guess.
-- **`StopFailure`**: we read an `error` field if there is one.
+- **`Notification`, verified by capture on 2026-10-16.** A permission prompt arrives with
+  `notificationType: "permission_prompt"` (also `notification_type`), `message: "Tool permission requested"` and
+  `level: "info"`; see fixture `notification.json`. That's the same type value Claude Code uses, so we map on the
+  type. Grok also sends an idle ping about a minute after `Stop` ("Waiting for your next prompt", fixture
+  `notification-idle.json`), which is ignored. A notification without a type only counts as `needs_input` if its text
+  asks for a decision.
+- **`StopFailure`**: we read an `error` field if there is one (not captured yet).
+- No process id reaches Grok's hooks, so after you approve a command the session stays at "needs input" until the
+  command finishes (Claude Code is tracked through `CLAUDE_PID`; Grok isn't).
 
 ## Known gaps
 

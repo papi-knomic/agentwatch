@@ -13,7 +13,9 @@ desktop notification when one needs your input or has finished. You can set noti
 - **Name:** `agentwatch` (npm package and command; display name "AgentWatch"). Don't hard-code it: use `APP_NAME` /
   `APP_DISPLAY_NAME` from `src/core/constants.ts`, kept in sync with `package.json`. The project was briefly called
   `orchestrator`; `LEGACY_APP_NAMES` lets us find and clean up what was created under that name.
-- **Distribution:** `npm install -g agentwatch && agentwatch setup`. Hooks and start at login store the installed
+- **Distribution:** `npm install -g @kn0mic/agentwatch && agentwatch setup`. The package is scoped because npm
+  rejected unscoped `agentwatch` as too similar to `agent-watch`; the command is still `agentwatch` (`PACKAGE_NAME`
+  vs `APP_NAME` in constants.ts). Hooks and start at login store the installed
   CLI's absolute path, so installing from npx's cache is refused (`assertStableInstall`).
 - **License:** MIT.
 
@@ -139,9 +141,8 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 - Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
   event for API-error stops.
 - Grok: payloads verified by capture (Grok 1.0.34): `hookEventName` is snake_case, with Claude-style duplicates, and an
-  extra `stop` (reason `shutdown`) arrives after `session_end`. `Notification` was seen live only as an idle ping
-  ("Waiting for your next prompt"), which is ignored. Only notification text that asks for a decision maps to
-  `needs_input`; a real Grok permission prompt has not been captured yet.
+  extra `stop` (reason `shutdown`) arrives after `session_end`. Permission prompts arrive as `Notification` with
+  `notificationType: "permission_prompt"` (captured); idle pings ("Waiting for your next prompt") are ignored.
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.

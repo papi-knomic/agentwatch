@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAgentEvent, titleFromPrompt, truncateMessage } from "./types.js";
+import { parseAgentEvent, titleFromPrompt, truncateMessage, truncateTitle } from "./types.js";
 
 const valid = {
   tool: "claude-code",
@@ -58,6 +58,25 @@ describe("titleFromPrompt", () => {
     expect(titleFromPrompt(`${opened}\n${selection}\n  Rename the helper`)).toBe("Rename the helper");
     expect(titleFromPrompt(`${opened}/clear`)).toBeUndefined();
     expect(titleFromPrompt(opened)).toBeUndefined();
+  });
+
+  it("cleans tool titles too, and rejects one that is only (possibly cut-off) IDE context", () => {
+    expect(truncateTitle("<ide_selection>lines 1-3</ide_selection>Fix the parser")).toBe("Fix the parser");
+    expect(
+      truncateTitle("<ide_opened_file>The user opened the file c:\\app\\README.md in the…"),
+    ).toBeUndefined();
+    expect(truncateTitle("<ide_opened_file>x</ide_opened_file>")).toBeUndefined();
+    const event = parseAgentEvent({
+      tool: "claude-code",
+      sessionId: "s",
+      cwd: "C:\\x",
+      status: "working",
+      timestamp: "2026-10-16T12:00:00.000Z",
+      title: "<ide_opened_file>The user opened the file",
+      titleSource: "tool",
+    });
+    expect(event?.title).toBeUndefined();
+    expect(event?.titleSource).toBeUndefined();
   });
 
   it("keeps ordinary HTML at the start of a prompt", () => {

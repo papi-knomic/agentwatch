@@ -4,30 +4,44 @@ import type { AgentEvent } from "../core/types.js";
 import { APPROVED_MESSAGE, createApprovalWatcher } from "./approval-watch.js";
 import type { ChildProcessInfo } from "./process-list.js";
 
+/** The last activity before the prompt (e.g. the previous tool call). */
+const ACTIVITY_AT = Date.parse("2026-10-16T11:59:55.000Z");
+/** When our "needs input" hook event arrived. */
 const PROMPT_AT = Date.parse("2026-10-16T12:00:00.000Z");
 
-function setup(children: ChildProcessInfo[], event: Partial<AgentEvent> = {}) {
+function setup(listing: ChildProcessInfo[][] | ChildProcessInfo[], event: Partial<AgentEvent> = {}) {
   const store = new SessionStore();
+  const base = { tool: "claude-code", sessionId: "s1", cwd: "C:\\projects\\demo", pid: 100, ...event };
   store.apply({
-    tool: "claude-code",
-    sessionId: "s1",
-    cwd: "C:\\projects\\demo",
+    ...base,
+    status: "working",
+    message: "Read",
+    timestamp: new Date(ACTIVITY_AT).toISOString(),
+  });
+  store.apply({
+    ...base,
     status: "needs_input",
     message: "Claude needs your permission to use Bash",
-    pid: 100,
     timestamp: new Date(PROMPT_AT).toISOString(),
-    ...event,
   });
+  // One listing per tick; a flat array means "the same children every tick".
+  const ticks = Array.isArray(listing[0])
+    ? (listing as ChildProcessInfo[][])
+    : [listing as ChildProcessInfo[]];
   const queried: number[][] = [];
   const watcher = createApprovalWatcher({
     store,
     listChildren: async (pids) => {
       queried.push(pids);
-      return children;
+      return ticks[Math.min(queried.length - 1, ticks.length - 1)] ?? [];
     },
     now: () => PROMPT_AT + 30_000,
   });
-  return { store, watcher, queried, status: () => store.get("claude-code:s1")?.status };
+  const twoTicks = async () => {
+    await watcher.tick();
+    await watcher.tick();
+  };
+  return { store, watcher, twoTicks, queried, status: () => store.get("claude-code:s1")?.status };
 }
 
 const child = (overrides: Partial<ChildProcessInfo>): ChildProcessInfo => ({
@@ -40,40 +54,59 @@ const child = (overrides: Partial<ChildProcessInfo>): ChildProcessInfo => ({
 });
 
 describe("approval watcher", () => {
-  it("moves a waiting session to working when a new shell starts under the agent", async () => {
+  it("moves a waiting session to working once the approved shell has been seen twice", async () => {
     const { store, watcher, status } = setup([child({})]);
+    await watcher.tick();
+    expect(status()).toBe("needs_input"); // one sighting isn't enough
     await watcher.tick();
     expect(status()).toBe("working");
     expect(store.get("claude-code:s1")?.message).toBe(APPROVED_MESSAGE);
   });
 
-  it("ignores children that were already running before the prompt", async () => {
-    const { watcher, status } = setup([child({ startedAt: PROMPT_AT - 60_000 })]);
-    await watcher.tick();
+  it("catches a fast approval: the command started within a second of the prompt", async () => {
+    const { twoTicks, status } = setup([child({ startedAt: PROMPT_AT + 300 })]);
+    await twoTicks();
+    expect(status()).toBe("working");
+  });
+
+  it("catches a late hook: our needs-input event arrived after the command had started", async () => {
+    const { twoTicks, status } = setup([child({ startedAt: PROMPT_AT - 2000 })]);
+    await twoTicks();
+    expect(status()).toBe("working");
+  });
+
+  it("ignores shells that were running before the last activity (background tasks)", async () => {
+    const { twoTicks, status } = setup([child({ startedAt: ACTIVITY_AT - 60_000 })]);
+    await twoTicks();
     expect(status()).toBe("needs_input");
   });
 
-  it("ignores hook processes started with the prompt", async () => {
+  it("ignores a short-lived process that is gone by the next check (e.g. another tool's hook)", async () => {
+    const { twoTicks, status } = setup([[child({ pid: 300 })], [], [child({ pid: 301 })]]);
+    await twoTicks();
+    expect(status()).toBe("needs_input");
+  });
+
+  it("never counts our own hook processes", async () => {
     const hook = child({ command: 'cmd.exe /c node "C:/x/cli.js" hook --tool claude-code' });
-    const early = child({ startedAt: PROMPT_AT + 500 });
-    const { watcher, status } = setup([hook, early]);
-    await watcher.tick();
+    const { twoTicks, status } = setup([hook]);
+    await twoTicks();
     expect(status()).toBe("needs_input");
   });
 
   it("ignores non-shell children and other parents", async () => {
-    const { watcher, status } = setup([child({ name: "git.exe" }), child({ parentPid: 999 })]);
-    await watcher.tick();
+    const { twoTicks, status } = setup([child({ name: "git.exe" }), child({ pid: 201, parentPid: 999 })]);
+    await twoTicks();
     expect(status()).toBe("needs_input");
   });
 
   it("does nothing, and lists nothing, when no session waits with a pid", async () => {
-    const { watcher, queried } = setup([child({})], { pid: undefined });
-    await watcher.tick();
+    const { twoTicks, queried } = setup([child({})], { pid: undefined });
+    await twoTicks();
     expect(queried).toEqual([]);
   });
 
-  it("survives a failing process listing", async () => {
+  it("survives a failing process listing, logging it once", async () => {
     const store = new SessionStore();
     store.apply({
       tool: "claude-code",
@@ -94,7 +127,7 @@ describe("approval watcher", () => {
     await watcher.tick();
     await watcher.tick();
     await watcher.tick();
-    expect(logs).toHaveLength(1); // repeats are not logged every interval
+    expect(logs).toHaveLength(1);
     expect(logs[0]).toContain("boom");
     expect(store.get("claude-code:s1")?.status).toBe("needs_input");
   });

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, sep } from "node:path";
 import { adapters, toolDefaults } from "../adapters/index.js";
 import { type Config, ensureConfig, readConfig } from "../core/config.js";
-import { APP_DISPLAY_NAME, APP_NAME } from "../core/constants.js";
+import { APP_DISPLAY_NAME, APP_NAME, PACKAGE_NAME } from "../core/constants.js";
 import { configPath, serverLogPath } from "../core/paths.js";
 import { registerWindowsAppId } from "../notify/windows-identity.js";
 import { createSetupService, type SetupState } from "../server/setup.js";
@@ -31,7 +31,7 @@ export function assertStableInstall(cliPath: string): void {
   if (cliPath.includes(`${sep}_npx${sep}`)) {
     throw new Error(
       `${APP_NAME} is running from npx's temporary cache, so the hooks it installs would break when the cache is cleared.\n` +
-        `Install it globally first:  npm install -g ${APP_NAME}  then run:  ${APP_NAME} setup`,
+        `Install it globally first:  npm install -g ${PACKAGE_NAME}  then run:  ${APP_NAME} setup`,
     );
   }
 }

@@ -17,7 +17,7 @@ Status: **early (0.1)**. Claude Code, Codex and Grok are supported, and their ev
 Requires Node.js 22 or newer.
 
 ```sh
-npm install -g agentwatch
+npm install -g @kn0mic/agentwatch
 agentwatch setup
 ```
 

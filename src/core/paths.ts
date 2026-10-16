@@ -1,4 +1,4 @@
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, realpathSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { APP_NAME, HOME_ENV_VAR, LEGACY_APP_NAMES } from "./constants.js";
@@ -38,6 +38,19 @@ export function migrateLegacyHome(
     return legacy;
   } catch {
     return null; // e.g. a file is open on Windows; appHome keeps using the legacy folder until next time.
+  }
+}
+
+/**
+ * The folder's real on-disk spelling. Tools report the same folder as "c:\\research\\x" and
+ * "C:\\research\\x" (Windows paths are case-insensitive), which would otherwise show as two projects.
+ * Falls back to the input when the path doesn't exist here.
+ */
+export function canonicalPath(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
   }
 }
 

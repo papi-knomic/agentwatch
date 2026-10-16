@@ -7,6 +7,7 @@ import {
   truncateTitle,
 } from "../../core/types.js";
 import { detectTerminalHost } from "../shared/host.js";
+import { toolActivity } from "../shared/tool-name.js";
 import type { NormalizeContext } from "../types.js";
 import { claudeCodeMeta } from "./meta.js";
 import { readAiTitle } from "./title.js";
@@ -32,15 +33,16 @@ export function detectClaudeHost(env: NodeJS.ProcessEnv): string | undefined {
 
 function statusFor(
   raw: Record<string, unknown>,
-): { status: AgentStatus; message?: string; title?: string | undefined } | null {
+): { status: AgentStatus; message?: string | undefined; title?: string | undefined } | null {
   switch (raw.hook_event_name) {
     case "SessionStart":
       return { status: "idle" };
     case "UserPromptSubmit":
       return { status: "working", title: titleFromPrompt(str(raw.prompt)) };
     case "PostToolUse":
+      return { status: "working", message: toolActivity(str(raw.tool_name)) };
     case "PostToolUseFailure":
-      return { status: "working" };
+      return { status: "working", message: toolActivity(str(raw.tool_name), true) };
     case "Notification": {
       const type = str(raw.notification_type);
       const message = str(raw.message);

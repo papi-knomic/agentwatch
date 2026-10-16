@@ -9,6 +9,7 @@ import { createNotificationDispatcher } from "../server/notifications.js";
 import { createSessionOpener } from "../server/open-session.js";
 import { defaultListChildren } from "../server/process-list.js";
 import { createAppServer } from "../server/server.js";
+import { createSessionHealth } from "../server/session-health.js";
 import { openUrl } from "./open.js";
 import { isRunning, setupService, startInBackground } from "./service.js";
 
@@ -59,6 +60,7 @@ export async function start(options: {
     }),
   );
   setInterval(() => store.pruneStale(), PRUNE_INTERVAL_MS).unref();
+  createSessionHealth({ store }).start();
   createApprovalWatcher({
     store,
     listChildren: defaultListChildren(),

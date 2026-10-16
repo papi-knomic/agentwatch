@@ -16,7 +16,7 @@ describe("assertStableInstall", () => {
       "node_modules",
       "x.js",
     );
-    expect(() => assertStableInstall(npx)).toThrow(/npm install -g agentwatch/);
+    expect(() => assertStableInstall(npx)).toThrow(/npm install -g @kn0mic\/agentwatch/);
   });
 
   it("accepts a global install or a local checkout", () => {

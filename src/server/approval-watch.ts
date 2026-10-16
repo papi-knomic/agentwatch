@@ -22,8 +22,6 @@ export interface ApprovalWatcherOptions {
   store: SessionStore;
   listChildren: ListChildren;
   intervalMs?: number;
-  /** Children started this soon after the prompt are hook processes, not the command. */
-  graceMs?: number;
   now?: () => number;
   log?: (message: string) => void;
 }
@@ -33,9 +31,12 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
   start: () => void;
   stop: () => void;
 } {
-  const { store, listChildren, intervalMs = 2000, graceMs = 2000, now = Date.now, log } = options;
+  const { store, listChildren, intervalMs = 2000, now = Date.now, log } = options;
   let timer: NodeJS.Timeout | undefined;
   let running = false;
+  // Candidate shells seen on the previous tick, per session. A command must be seen twice in a row, so a
+  // short-lived hook from some other tool firing with the prompt doesn't count as an approval.
+  let seen = new Map<string, Set<number>>();
   // A failing lister would otherwise log every interval; say it once a minute, and say when it recovers.
   let lastError: { message: string; loggedAt: number } | undefined;
 
@@ -49,7 +50,10 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
   async function tick(): Promise<void> {
     if (running) return;
     const waiting = store.list().filter((s) => s.status === "needs_input" && s.pid !== undefined);
-    if (waiting.length === 0) return;
+    if (waiting.length === 0) {
+      seen = new Map();
+      return;
+    }
     running = true;
     try {
       const pids = [...new Set(waiting.map((s) => s.pid as number))];
@@ -58,9 +62,17 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
         log?.("Approval watch recovered.");
         lastError = undefined;
       }
+      const nextSeen = new Map<string, Set<number>>();
       for (const session of waiting) {
-        const since = Date.parse(session.updatedAt) + graceMs;
-        if (!children.some((c) => c.parentPid === session.pid && c.startedAt > since)) continue;
+        // Measured from the last activity *before* the prompt, not the prompt event itself: our "needs input"
+        // hook can land after a fast approval, and the approved shell then starts before it.
+        const since = Date.parse(session.previousActivityAt ?? session.statusSince);
+        const candidates = children
+          .filter((c) => c.parentPid === session.pid && c.startedAt > since)
+          .map((c) => c.pid);
+        nextSeen.set(session.key, new Set(candidates));
+        const before = seen.get(session.key);
+        if (!candidates.some((pid) => before?.has(pid))) continue;
         // Re-check: an event may have arrived while we were listing processes.
         const current = store.get(session.key);
         if (current?.status !== "needs_input" || current.updatedAt !== session.updatedAt) continue;
@@ -73,6 +85,7 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
           timestamp: new Date(now()).toISOString(),
         });
       }
+      seen = nextSeen;
     } catch (error) {
       reportFailure(error);
     } finally {

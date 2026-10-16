@@ -1,5 +1,6 @@
 import { type AgentEvent, type AgentStatus, titleFromPrompt, truncateMessage } from "../../core/types.js";
 import { detectHost } from "../shared/host.js";
+import { toolActivity } from "../shared/tool-name.js";
 import type { NormalizeContext } from "../types.js";
 import { codexMeta } from "./meta.js";
 
@@ -9,14 +10,14 @@ function str(value: unknown): string | undefined {
 
 function statusFor(
   raw: Record<string, unknown>,
-): { status: AgentStatus; message?: string; title?: string | undefined } | null {
+): { status: AgentStatus; message?: string | undefined; title?: string | undefined } | null {
   switch (raw.hook_event_name) {
     case "SessionStart":
       return { status: "idle" };
     case "UserPromptSubmit":
       return { status: "working", title: titleFromPrompt(str(raw.prompt)) };
     case "PostToolUse":
-      return { status: "working" };
+      return { status: "working", message: toolActivity(str(raw.tool_name)) };
     case "PermissionRequest": {
       // Codex has no Notification event; an approval request is the "needs you" signal.
       const tool = str(raw.tool_name);

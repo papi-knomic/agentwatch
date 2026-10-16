@@ -1,6 +1,7 @@
 import { getAdapter, toolDefaults } from "../adapters/index.js";
 import { readConfig } from "../core/config.js";
 import { HOOK_REQUEST_TIMEOUT_MS, HOOK_STDIN_MAX_BYTES, HOOK_STDIN_TIMEOUT_MS } from "../core/constants.js";
+import { canonicalPath } from "../core/paths.js";
 
 /**
  * Entry point for every agent hook. Hard rule: this must never print to stdout, never fail, and never
@@ -18,6 +19,7 @@ export async function runHook(toolId: string | undefined, argPayload: string | u
     if (!text.trim()) return;
     const event = adapter.normalize(JSON.parse(text), { env: process.env, now: new Date() });
     if (!event) return;
+    event.cwd = canonicalPath(event.cwd);
 
     const config = await readConfig(toolDefaults());
     if (!config || config.tools[toolId]?.enabled === false) return;

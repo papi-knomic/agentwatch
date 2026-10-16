@@ -64,6 +64,7 @@ async function notifyTest(toolId: string, status: NotifiableStatus): Promise<voi
     host: "VS Code",
     startedAt: now,
     updatedAt: now,
+    statusSince: now,
   };
   const notification = buildNotification(session, status, settings, `http://127.0.0.1:${config.port}`);
   await createNotifier()(notification);

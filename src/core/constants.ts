@@ -1,6 +1,8 @@
-// The npm package and command name. Keep in sync with package.json ("name" and "bin").
+// The command name (package.json "bin") and the name of the state folder, Grok hook file, etc.
 export const APP_NAME = "agentwatch";
 export const APP_DISPLAY_NAME = "AgentWatch";
+/** The npm package (package.json "name"). npm rejected unscoped "agentwatch" as too close to "agent-watch". */
+export const PACKAGE_NAME = "@kn0mic/agentwatch";
 
 /**
  * Names this project shipped under before. Anything we created under them (state folder, Grok hook file,

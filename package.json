@@ -1,5 +1,5 @@
 {
-  "name": "agentwatch",
+  "name": "@kn0mic/agentwatch",
   "version": "0.1.0",
   "description": "One local dashboard and desktop notifications for all your AI coding agents (Claude Code, Codex, Grok).",
   "keywords": [
@@ -13,6 +13,9 @@
     "vscode"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "agentwatch": "dist/cli/index.js"

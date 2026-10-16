@@ -1,15 +1,28 @@
 import { type AgentEvent, type AgentStatus, titleFromPrompt, truncateMessage } from "../../core/types.js";
 import { detectHost } from "../shared/host.js";
+import { toolActivity } from "../shared/tool-name.js";
 import type { NormalizeContext } from "../types.js";
 import { grokMeta } from "./meta.js";
 
-/** Notification text that asks the user to decide something (permission prompts, questions). */
+/** Notification types that mean a human has to act; shared vocabulary with Claude Code. */
+const NEEDS_INPUT_TYPES = new Set([
+  "permission_prompt",
+  "elicitation_dialog",
+  "elicitation_url_dialog",
+  "agent_needs_input",
+]);
+
+/** Fallback for notifications without a type: text that asks the user to decide something. */
 const NEEDS_INPUT_MESSAGE = /permission|approv|allow|confirm|question|choose|answer/i;
 
 interface Mapped {
   status: AgentStatus;
   message?: string;
   title?: string;
+}
+
+function withMessage(message: string | undefined): { message?: string } {
+  return message ? { message } : {};
 }
 
 function str(value: unknown): string | undefined {
@@ -43,13 +56,21 @@ function statusFor(event: string | undefined, raw: Record<string, unknown>): Map
       return title ? { status: "working", title } : { status: "working" };
     }
     case "PostToolUse":
+      return { status: "working", ...withMessage(toolActivity(field(raw, "toolName", "tool_name"))) };
     case "PostToolUseFailure":
-      return { status: "working" };
+      return { status: "working", ...withMessage(toolActivity(field(raw, "toolName", "tool_name"), true)) };
     case "Notification": {
-      // Seen live: about a minute after Stop, Grok sends "Waiting for your next prompt", an idle ping, not a
-      // request. Only messages that ask for a decision mean "needs you"; anything else is ignored rather
-      // than raising a false alarm.
+      // Captured (Grok 1.0.34): a permission prompt arrives as notificationType "permission_prompt", message
+      // "Tool permission requested", the same type Claude Code uses. Grok also sends idle pings ("Waiting for
+      // your next prompt") about a minute after Stop; those must not read as "needs you".
       const message = field(raw, "message", "message");
+      const type = field(raw, "notificationType", "notification_type");
+      if (type !== undefined) {
+        return NEEDS_INPUT_TYPES.has(type)
+          ? { status: "needs_input", message: message ?? "Needs your input" }
+          : null;
+      }
+      // No type: only text that asks for a decision counts.
       return message && NEEDS_INPUT_MESSAGE.test(message) ? { status: "needs_input", message } : null;
     }
     case "Stop":

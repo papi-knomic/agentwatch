@@ -1,9 +1,15 @@
 {
-    "hookEventName":  "notification",
-    "sessionId":  "grok-sess-1",
-    "cwd":  "C:\\Users\\dev\\projects\\web",
-    "workspaceRoot":  "C:\\Users\\dev\\projects\\web",
-    "message":  "Grok needs your permission to run run_terminal_command",
-    "hook_event_name":  "Notification",
-    "session_id":  "grok-sess-1"
+  "hookEventName": "notification",
+  "sessionId": "grok-sess-1",
+  "cwd": "C:\\Users\\dev\\projects\\web",
+  "workspaceRoot": "C:\\Users\\dev\\projects\\web",
+  "timestamp": "2026-10-16T01:12:50.288000000+00:00",
+  "permissionMode": "default",
+  "notificationType": "permission_prompt",
+  "message": "Tool permission requested",
+  "level": "info",
+  "hook_event_name": "Notification",
+  "session_id": "grok-sess-1",
+  "notification_type": "permission_prompt",
+  "permission_mode": "default"
 }

@@ -46,7 +46,12 @@ export class SessionStore {
       status: event.status,
       startedAt: existing?.startedAt ?? event.timestamp,
       updatedAt: event.timestamp,
+      statusSince:
+        existing?.status === event.status ? (existing.statusSince ?? existing.updatedAt) : event.timestamp,
     };
+    const previousActivityAt =
+      existing?.status === event.status ? existing.previousActivityAt : existing?.updatedAt;
+    if (previousActivityAt) session.previousActivityAt = previousActivityAt;
     // A message describes the event that brought it ("needs your permission", "Running approved command"),
     // so it never carries over: a stale one on a card is worse than none.
     if (event.message) session.message = event.message;
@@ -68,6 +73,17 @@ export class SessionStore {
 
     this.#sessions.set(key, session);
     const change: StoreChange = { type: "upsert", session, previousStatus: existing?.status ?? null };
+    this.#emit(change);
+    return change;
+  }
+
+  /** Marks a working session as stalled without counting as activity (updatedAt and status stay). */
+  markStalled(key: string): StoreChange | null {
+    const existing = this.#sessions.get(key);
+    if (existing?.status !== "working" || existing.stalled) return null;
+    const session: Session = { ...existing, stalled: true };
+    this.#sessions.set(key, session);
+    const change: StoreChange = { type: "upsert", session, previousStatus: existing.status };
     this.#emit(change);
     return change;
   }
@@ -94,7 +110,8 @@ export class SessionStore {
       if (!Array.isArray(parsed)) return;
       for (const item of parsed as Session[]) {
         if (item && typeof item.key === "string" && typeof item.updatedAt === "string") {
-          this.#sessions.set(item.key, item);
+          // Sessions saved by older versions have no statusSince.
+          this.#sessions.set(item.key, { ...item, statusSince: item.statusSince ?? item.updatedAt });
         }
       }
     } catch {

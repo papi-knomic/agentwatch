@@ -49,7 +49,18 @@ export interface Session {
   host?: string;
   pid?: number;
   startedAt: string;
+  /** Last event of any kind. */
   updatedAt: string;
+  /** When the session entered its current status; what "how long has this been waiting" is measured from. */
+  statusSince: string;
+  /**
+   * The last event before the current status began (for needs_input: the activity just before the prompt).
+   * The approval watcher counts any shell started after it, since our "needs input" hook can arrive after the
+   * user has already approved.
+   */
+  previousActivityAt?: string;
+  /** Working, but no event for a long time: maybe stuck, maybe a very long command. Cleared by any event. */
+  stalled?: boolean;
 }
 
 export function sessionKey(tool: string, sessionId: string): string {
@@ -63,8 +74,12 @@ export function truncateMessage(text: string | undefined): string | undefined {
   return oneLine.length > MAX_MESSAGE_LENGTH ? `${oneLine.slice(0, MAX_MESSAGE_LENGTH - 1)}…` : oneLine;
 }
 
+/**
+ * One line of at most MAX_TITLE_LENGTH, for any title: a tool's own (which can also start with IDE context)
+ * or a prompt's. Undefined when nothing but IDE context is left.
+ */
 export function truncateTitle(text: string | undefined): string | undefined {
-  const firstLine = text
+  const firstLine = (text === undefined ? undefined : stripLeadingContext(text))
     ?.split(/\r?\n/)
     .find((line) => line.trim() !== "")
     ?.replace(/\s+/g, " ")
@@ -79,13 +94,15 @@ export function truncateTitle(text: string | undefined): string | undefined {
  * so a prompt that starts with ordinary HTML like `<b>` keeps it.
  */
 const LEADING_CONTEXT_BLOCK = /^\s*<([a-z]+[_-][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/i;
+/** The same tag with its end cut off, e.g. a title truncated mid-block: nothing usable follows. */
+const UNCLOSED_CONTEXT_TAG = /^\s*<[a-z]+[_-][\w-]*\b[^>]*>/i;
 
-function stripLeadingContext(prompt: string): string {
-  let rest = prompt;
+function stripLeadingContext(text: string): string {
+  let rest = text;
   for (let match = LEADING_CONTEXT_BLOCK.exec(rest); match; match = LEADING_CONTEXT_BLOCK.exec(rest)) {
     rest = rest.slice(match[0].length);
   }
-  return rest;
+  return UNCLOSED_CONTEXT_TAG.test(rest) ? "" : rest;
 }
 
 /** A task name from a prompt. Slash commands like /clear or /compact aren't tasks. */

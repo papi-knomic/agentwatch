@@ -58,7 +58,23 @@ describe("normalizeGrok", () => {
     expect(normalizeGrok(fixture("notification-idle.json"), ctx)).toBeNull();
   });
 
-  it("only treats notifications that ask for a decision as needing you", () => {
+  it("maps the captured permission prompt by its notificationType", () => {
+    expect(normalizeGrok(fixture("notification.json"), ctx)).toMatchObject({
+      status: "needs_input",
+      message: "Tool permission requested",
+    });
+    const idleTyped = {
+      hookEventName: "notification",
+      sessionId: "s",
+      cwd: "/w",
+      notificationType: "idle_prompt",
+    };
+    expect(
+      normalizeGrok({ ...idleTyped, message: "Please approve? (wording doesn't matter)" }, ctx),
+    ).toBeNull();
+  });
+
+  it("without a notificationType, only text that asks for a decision means needs you", () => {
     const base = { hookEventName: "notification", sessionId: "s", cwd: "/w" };
     expect(normalizeGrok({ ...base, message: "Grok wants to run a command. Allow?" }, ctx)?.status).toBe(
       "needs_input",
