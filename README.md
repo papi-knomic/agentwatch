@@ -29,7 +29,25 @@ agentwatch setup
 Then start a **new** agent session, in VS Code, a terminal or a desktop app. It shows up on the dashboard right away.
 Sessions that were already open don't pick up the new hooks.
 
-**Codex only:** open `/hooks` in Codex once and approve the new hooks. Codex skips hooks you haven't trusted.
+What else each tool needs:
+- **Claude Code:** nothing. Start a new session.
+- **Grok:** nothing. Its personal hooks folder (`~/.grok/hooks`) needs no trust step.
+- **Codex:** approve the new hooks once. Codex skips hooks you haven't trusted. Run `/hooks` in the Codex CLI and
+  approve them. No `codex` command on your PATH? The VS Code extension ships the CLI at
+  `~/.vscode/extensions/openai.chatgpt-<version>/bin/<platform>/codex` (`codex.exe` on Windows); start it in a
+  terminal and run `/hooks` there. For desktop chats that were already open, fully quit and reopen Codex, then
+  resume the chat and send a prompt; an already loaded chat may keep its old hook configuration. The dashboard's
+  **Hooks installed** confirms the config file is in place, not that every open chat has loaded or trusted it.
+
+### Check it works
+
+```sh
+agentwatch status                              # dashboard running? each tool "connected"?
+agentwatch notify-test --status needs_input    # you should see a desktop notification
+```
+
+Then send a prompt in a new Claude Code, Codex or Grok session: its row appears on the dashboard within a second.
+If it doesn't, see [Troubleshooting](#troubleshooting).
 
 Prefer to connect tools one at a time? Open the dashboard. The **Connect your agents** panel shows each tool's status
 and lets you preview and connect it with a click. It also has the terminal command for each tool.
@@ -48,16 +66,33 @@ and lets you preview and connect it with a click. It also has the terminal comma
 | `agentwatch install --tool <claude-code\|codex\|grok\|all> [--dry-run]` | Connect one tool |
 | `agentwatch uninstall --tool all` | Remove all hooks, start at login and the notification registration |
 
+### Updating
+
+```sh
+npm install -g @kn0mic/agentwatch@latest
+agentwatch stop
+agentwatch start --background
+```
+
+The hooks pick up the new version immediately. The running dashboard keeps the old code until you restart it.
+If release notes mention new hooks, run `agentwatch install --tool all` again (and, for Codex, approve them in
+`/hooks` again).
+
 ## Supported tools
 
 | Tool | Installs into | Needs input | Done | Error | Notes |
 |---|---|---|---|---|---|
 | Claude Code | `~/.claude/settings.json` | ✅ | ✅ | ✅ | [adapter docs](src/adapters/claude-code/README.md) |
-| Codex | `~/.codex/hooks.json` | ✅ (permission requests) | ✅ | ❌ no such event | Trust the hooks once via `/hooks`. [adapter docs](src/adapters/codex/README.md) |
+| Codex | `~/.codex/hooks.json` | ✅ (permissions and async questions) | ✅ | ❌ no such event | Trust the hooks once via `/hooks`. [adapter docs](src/adapters/codex/README.md) |
 | Grok | `~/.grok/hooks/agentwatch.json` (its own file) | ⚠️ only messages asking for a decision | ✅ | ✅ | [adapter docs](src/adapters/grok/README.md) |
 
 Hooks are set per user, not per app, so sessions are picked up from the CLI in any terminal and from the VS Code
 extensions too.
+
+Codex desktop's suggested-reply helper sessions are hidden after their app-generated prompt is identified.
+Async questions stay under **needs you** while the agent does other work, until your next reply.
+Desktop sessions also get **Open in Codex**, which opens the exact local chat. With `clickAction: "auto"`,
+their notifications open that chat too; an **Open dashboard** action remains available.
 
 Want another tool supported? See [Adding a tool](#adding-a-tool).
 
@@ -84,7 +119,8 @@ PowerShell before install) and turn off Do Not Disturb.
 ### Settings
 
 Edit `~/.agentwatch/config.json` (created on first start), then restart the dashboard (`agentwatch stop`, then
-`agentwatch start --background`):
+`agentwatch start --background`). Each tool has its own block under `tools`, keyed `claude-code`, `codex` and
+`grok`. Any setting you leave out keeps its default, so you only need to write what you change:
 
 ```jsonc
 {
@@ -100,10 +136,34 @@ Edit `~/.agentwatch/config.json` (created on first start), then restart the dash
       "sound": "im",            // default | im | mail | reminder | sms | alarm | silent
       "notifyOn": { "needs_input": true, "done": false, "error": true },
       "clickAction": "auto"     // auto | vscode | dashboard | none
-    }
+    },
+    "codex": { "sound": "mail" },
+    "grok": { "enabled": false }  // stop tracking Grok without uninstalling its hook
   }
 }
 ```
+
+## Troubleshooting
+
+**A session doesn't show up.** Check, in order:
+1. `agentwatch status`: is the dashboard running? If not, run `agentwatch start --background`.
+2. Is the tool **connected** in that list? If not, run `agentwatch install --tool <id>`.
+3. Was the session started *after* connecting? Open a new one; existing sessions keep their old hooks.
+4. Codex: did you approve the hooks in `/hooks`? Codex silently skips untrusted hooks.
+5. Is the tool disabled with `"enabled": false` in `config.json`?
+
+**No notifications.** Run `agentwatch notify-test`. On Windows, allow notifications for AgentWatch in
+*Settings → System → Notifications* and turn off Do Not Disturb. Check that `"notifications"` and the tool's
+`notifyOn` aren't turned off in `config.json`.
+
+**"Port 7878 is in use".** Set another `"port"` in `~/.agentwatch/config.json` and start again. Hooks read the port
+from the same file, so nothing else needs changing.
+
+**Dashboard won't start in the background.** Its output goes to `~/.agentwatch/server.log`. To see errors directly,
+run `agentwatch start` in a terminal (Ctrl+C to stop).
+
+**A row is stuck.** Use the × on the row to dismiss it. Sessions whose agent process has exited (Claude Code)
+disappear on their own, and finished ones clear after an hour.
 
 ## How it works
 
@@ -131,6 +191,8 @@ the session switches to "working · Running approved command", usually within a 
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks.
 - Notification clicks can open a VS Code window, but not a specific Claude tab or terminal tab. A notification can
   open only one link, so use the dashboard's **Open in VS Code** to get to the exact Claude tab.
+- Codex desktop chats open directly through `codex://threads/<thread-id>`. This requires Codex to be installed
+  as the protocol handler and the session to be identified as running in the desktop app.
 - macOS and Linux notifications and start at login are implemented but not yet tested on those systems. macOS notifications can't be clicked.
 - Codex and Grok don't expose their process id to hooks, so after you approve a command there, the session stays at
   "needs input" until the command finishes. The same goes for Claude Code permission prompts that don't run a shell (e.g.

@@ -16,7 +16,7 @@ export interface ToolSettings {
   color: string;
   sound: Sound;
   notifyOn: Record<NotifiableStatus, boolean>;
-  /** auto: open the project in VS Code if the session runs there, otherwise open the dashboard. */
+  /** auto: open the session's app when supported, the VS Code project, or the dashboard as a fallback. */
   clickAction: ClickAction;
 }
 

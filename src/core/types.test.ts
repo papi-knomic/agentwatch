@@ -18,6 +18,17 @@ describe("parseAgentEvent", () => {
     expect(parseAgentEvent({ ...valid, prompt: "secret" })).not.toHaveProperty("prompt");
   });
 
+  it("validates question and helper flags without accepting truthy strings", () => {
+    expect(parseAgentEvent({ ...valid, inputPending: true, hidden: true })).toMatchObject({
+      inputPending: true,
+      hidden: true,
+    });
+    expect(parseAgentEvent({ ...valid, inputPending: false })).toMatchObject({ inputPending: false });
+    const event = parseAgentEvent({ ...valid, inputPending: "true", hidden: "true" });
+    expect(event).not.toHaveProperty("inputPending");
+    expect(event).not.toHaveProperty("hidden");
+  });
+
   it.each([
     ["missing tool", { ...valid, tool: undefined }],
     ["unknown status", { ...valid, status: "sleeping" }],

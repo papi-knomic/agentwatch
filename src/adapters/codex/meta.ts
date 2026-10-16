@@ -7,6 +7,7 @@ export const codexMeta: AdapterMeta = {
   sound: "im",
   docsUrl: "https://learn.chatgpt.com/docs/hooks",
   afterInstall: [
-    "In Codex (CLI or VS Code extension), run /hooks and approve the new hooks. Codex skips hooks you haven't trusted.",
+    "Run /hooks in the Codex CLI and approve the new hooks. Codex skips hooks you haven't trusted.",
+    "If existing desktop-app chats are missing, fully quit and reopen Codex, then resume the chat. Sending another prompt in an already loaded chat may not reload its hooks.",
   ],
 };

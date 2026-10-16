@@ -15,6 +15,66 @@ const event = (overrides: Partial<AgentEvent>): AgentEvent => ({
 });
 
 describe("SessionStore", () => {
+  it("keeps an unanswered question visible through background tools and Stop, then clears on reply", () => {
+    const store = new SessionStore();
+    store.apply(event({ status: "needs_input", inputPending: true, message: "Waiting for your answer" }));
+    store.apply(event({ status: "working", message: "Bash", timestamp: "2026-10-16T12:00:01.000Z" }));
+    store.apply(event({ status: "done", timestamp: "2026-10-16T12:00:02.000Z" }));
+    expect(store.get("claude-code:s1")).toMatchObject({
+      status: "needs_input",
+      inputPending: true,
+      message: "Waiting for your answer",
+      statusSince: "2026-10-16T12:00:00.000Z",
+    });
+    store.apply(event({ status: "working", inputPending: false, timestamp: "2026-10-16T12:00:03.000Z" }));
+    expect(store.get("claude-code:s1")).toMatchObject({ status: "working" });
+    expect(store.get("claude-code:s1")?.message).toBeUndefined();
+    store.apply(event({ status: "done", timestamp: "2026-10-16T12:00:04.000Z" }));
+    expect(store.get("claude-code:s1")?.status).toBe("done");
+  });
+
+  it("removes a helper card and suppresses later lifecycle events, even when detection arrives late", () => {
+    const store = new SessionStore();
+    const changes: StoreChange[] = [];
+    store.subscribe((change) => changes.push(change));
+    store.apply(event({ status: "idle", timestamp: "2026-10-16T12:00:01.000Z" }));
+    expect(store.apply(event({ hidden: true }))).toEqual({ type: "remove", key: "claude-code:s1" });
+    changes.length = 0;
+    for (const [i, status] of (["working", "ended", "done", "idle"] as const).entries()) {
+      store.apply(event({ status, timestamp: `2026-10-16T12:00:0${i + 2}.000Z` }));
+    }
+    expect(store.list()).toEqual([]);
+    expect(store.get("claude-code:s1")).toBeUndefined();
+    expect(changes).toEqual([]);
+  });
+
+  it("doesn't hide an established task when the user quotes an internal helper prompt", () => {
+    const store = new SessionStore();
+    store.apply(event({ title: "Fix the adapter" }));
+    store.apply(event({ hidden: true, timestamp: "2026-10-16T12:00:01.000Z" }));
+    expect(store.list()).toHaveLength(1);
+    expect(store.list()[0]?.title).toBe("Fix the adapter");
+  });
+
+  it("persists helper filtering and pending questions across a server restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "orch-filter-"));
+    try {
+      const path = join(dir, "sessions.json");
+      const store = new SessionStore();
+      const now = new Date().toISOString();
+      store.apply(event({ hidden: true, timestamp: now }));
+      store.apply(event({ sessionId: "s2", status: "needs_input", inputPending: true, timestamp: now }));
+      await store.save(path);
+      const loaded = new SessionStore();
+      await loaded.load(path);
+      loaded.apply(event({ status: "done", timestamp: now }));
+      expect(loaded.list()).toHaveLength(1);
+      expect(loaded.list()[0]).toMatchObject({ sessionId: "s2", status: "needs_input", inputPending: true });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("creates and updates a session, reporting the previous status", () => {
     const store = new SessionStore();
     const changes: StoreChange[] = [];

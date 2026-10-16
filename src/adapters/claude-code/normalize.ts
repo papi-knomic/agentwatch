@@ -84,6 +84,7 @@ export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentE
     status: mapped.status,
     timestamp: ctx.now.toISOString(),
   };
+  if (record.hook_event_name === "UserPromptSubmit") event.inputPending = false;
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
   // A name the user set (session_title: SessionStart only), else the generated one VS Code shows, else the

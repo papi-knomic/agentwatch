@@ -1,0 +1,8 @@
+{
+  "session_id": "codex-desktop-session",
+  "cwd": "C:\\projects\\demo",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "request_user_input_async",
+  "permission_mode": "default",
+  "turn_id": "codex-desktop-turn"
+}

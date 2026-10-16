@@ -60,6 +60,8 @@ interface AgentEvent {
   message?: string;    // short, at most 200 chars, never a full prompt or transcript
   title?: string;      // task name: tool's session title, or first line of the first prompt (≤ 80 chars); first one sticks
   host?: string;       // where it runs: "VS Code", "Windows Terminal", ... ("VS Code*" enables VS Code click-through)
+  inputPending?: boolean; // an unanswered async question; true survives background work, false clears it
+  hidden?: boolean;    // internal helper session: suppress dashboard/notifications, including later events
   timestamp: string;   // ISO 8601, set when the hook fires; older events than a session's latest are dropped
 }
 ```
@@ -139,7 +141,11 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 ## Known limitations (keep up to date)
 
 - Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
-  event for API-error stops.
+  event for API-error stops. Desktop hooks are verified; chats loaded before installation may need an app restart.
+  Async questions stay needs_input until the next user prompt; blocking questions and individual simultaneous
+  questions aren't mapped. Suggested-reply helper sessions are hidden using their observed prompt prefix.
+  Desktop sessions use the observed internal `CODEX_INTERNAL_ORIGINATOR_OVERRIDE` env var for host detection;
+  the dashboard and auto notification clicks open their exact chat via the documented `codex://threads/<id>` URI.
 - Grok: payloads verified by capture (Grok 1.0.34): `hookEventName` is snake_case, with Claude-style duplicates, and an
   extra `stop` (reason `shutdown`) arrives after `session_end`. Permission prompts arrive as `Notification` with
   `notificationType: "permission_prompt"` (captured); idle pings ("Waiting for your next prompt") are ignored.

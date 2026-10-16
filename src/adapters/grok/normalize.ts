@@ -102,6 +102,7 @@ export function normalizeGrok(raw: unknown, ctx: NormalizeContext): AgentEvent |
     status: mapped.status,
     timestamp: ctx.now.toISOString(),
   };
+  if (grokEventName(record, ctx.env) === "UserPromptSubmit") event.inputPending = false;
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
   if (mapped.title) event.title = mapped.title;

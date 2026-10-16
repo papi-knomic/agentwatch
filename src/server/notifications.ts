@@ -43,7 +43,12 @@ function bodyFor(status: NotifiableStatus, session: Session): string {
   return detail ? `${session.title} — ${detail}` : session.title;
 }
 
-function clickUrlFor(settings: ToolSettings, session: Session, dashboardUrl: string): string | undefined {
+function clickUrlFor(
+  settings: ToolSettings,
+  session: Session,
+  dashboardUrl: string,
+  sessionLink: string | undefined,
+): string | undefined {
   switch (settings.clickAction) {
     case "none":
       return undefined;
@@ -52,7 +57,7 @@ function clickUrlFor(settings: ToolSettings, session: Session, dashboardUrl: str
     case "vscode":
       return vscodeUrl(session.cwd);
     case "auto":
-      return session.host?.startsWith("VS Code") ? vscodeUrl(session.cwd) : dashboardUrl;
+      return session.host?.startsWith("VS Code") ? vscodeUrl(session.cwd) : (sessionLink ?? dashboardUrl);
   }
 }
 
@@ -61,6 +66,7 @@ export function buildNotification(
   status: NotifiableStatus,
   settings: ToolSettings,
   dashboardUrl: string,
+  sessionLink?: string,
 ): DesktopNotification {
   const notification: DesktopNotification = {
     title: titleFor(status, projectName(session.cwd)),
@@ -70,7 +76,7 @@ export function buildNotification(
     status,
     color: settings.color,
   };
-  const clickUrl = clickUrlFor(settings, session, dashboardUrl);
+  const clickUrl = clickUrlFor(settings, session, dashboardUrl, sessionLink);
   if (clickUrl) notification.clickUrl = clickUrl;
   // The dashboard is the only place that can open the exact Claude tab, so always offer it.
   if (clickUrl !== dashboardUrl) notification.actions = [{ label: "Open dashboard", url: dashboardUrl }];
@@ -83,6 +89,7 @@ export function createNotificationDispatcher(options: {
   dashboardUrl: string;
   log: (message: string) => void;
   now?: () => number;
+  linkFor?: (session: Session) => string | undefined;
 }): (change: StoreChange) => void {
   const now = options.now ?? Date.now;
   const lastSent = new Map<string, number>();
@@ -100,7 +107,13 @@ export function createNotificationDispatcher(options: {
     if (last !== undefined && now() - last < DEDUPE_MS) return;
     lastSent.set(dedupeKey, now());
 
-    const notification = buildNotification(session, session.status, settings, options.dashboardUrl);
+    const notification = buildNotification(
+      session,
+      session.status,
+      settings,
+      options.dashboardUrl,
+      options.linkFor?.(session),
+    );
     options.notifier(notification).catch((error: unknown) => {
       options.log(`Notification failed: ${error instanceof Error ? error.message : String(error)}`);
     });

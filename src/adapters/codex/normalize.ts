@@ -17,6 +17,9 @@ function statusFor(
     case "UserPromptSubmit":
       return { status: "working", title: titleFromPrompt(str(raw.prompt)) };
     case "PostToolUse":
+      if (raw.tool_name === "request_user_input_async") {
+        return { status: "needs_input", message: "Waiting for your answer" };
+      }
       return { status: "working", message: toolActivity(str(raw.tool_name)) };
     case "PermissionRequest": {
       // Codex has no Notification event; an approval request is the "needs you" signal.
@@ -54,10 +57,27 @@ export function normalizeCodex(raw: unknown, ctx: NormalizeContext): AgentEvent 
     status: mapped.status,
     timestamp: ctx.now.toISOString(),
   };
+  if (record.hook_event_name === "UserPromptSubmit") {
+    event.inputPending = false;
+    // The desktop app starts a separate helper session for suggested replies. Match only its
+    // observed marker, not general references to suggestions in a real user's task.
+    if (
+      /^\s*(?:\*\*)?This is an app-generated request for a suggested next user message\b/.test(
+        str(record.prompt) ?? "",
+      )
+    ) {
+      event.hidden = true;
+      return event;
+    }
+  } else if (record.hook_event_name === "PostToolUse" && record.tool_name === "request_user_input_async") {
+    event.inputPending = true;
+  }
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
   if (mapped.title) event.title = mapped.title;
-  const host = detectHost(ctx.env);
+  // Observed in desktop sessions; prefer it over terminal variables inherited when launching the app.
+  const host =
+    ctx.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE === "Codex Desktop" ? "Codex Desktop" : detectHost(ctx.env);
   if (host) event.host = host;
   return event;
 }

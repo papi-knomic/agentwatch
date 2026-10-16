@@ -354,6 +354,8 @@ function SessionRow({
   const detail = detailFor(session);
   const stalled = isStalled(session);
   const source = [showTool ? (tool?.label ?? session.tool) : undefined, session.host].filter(Boolean);
+  const openTarget =
+    session.host === "Codex Desktop" ? "Codex" : session.host?.startsWith("VS Code") ? "VS Code" : undefined;
 
   return (
     <li
@@ -389,8 +391,7 @@ function SessionRow({
         {source.length > 0 && <span className="row-source">{source.join(" · ")}</span>}
       </div>
       <div className="row-actions">
-        {/* Terminal tabs can't be focused from outside, so only VS Code sessions get a button. */}
-        {session.host?.startsWith("VS Code") && <OpenButton sessionKey={session.key} />}
+        {openTarget && <OpenButton sessionKey={session.key} target={openTarget} />}
         <button
           type="button"
           className="icon-button dismiss"
@@ -410,7 +411,7 @@ function SessionRow({
 type OpenState = "idle" | "opening" | "failed";
 
 /** Shows progress right away: VS Code takes about a second to switch windows and then tabs. */
-function OpenButton({ sessionKey }: { sessionKey: string }) {
+function OpenButton({ sessionKey, target }: { sessionKey: string; target: string }) {
   const [state, setState] = useState<OpenState>("idle");
 
   useEffect(() => {
@@ -428,7 +429,7 @@ function OpenButton({ sessionKey }: { sessionKey: string }) {
     <button
       type="button"
       className={`open-button open-${state}`}
-      title="Open this session in VS Code"
+      title={`Open this session in ${target}`}
       disabled={state === "opening"}
       onClick={() => void open()}
     >
@@ -441,7 +442,9 @@ function OpenButton({ sessionKey }: { sessionKey: string }) {
           <path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5L7.5 8.5" />
         </svg>
       )}
-      <span>{state === "opening" ? "Opening" : state === "failed" ? "Couldn't open" : "Open"}</span>
+      <span>
+        {state === "opening" ? "Opening" : state === "failed" ? "Couldn't open" : `Open in ${target}`}
+      </span>
     </button>
   );
 }

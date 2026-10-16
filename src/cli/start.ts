@@ -56,6 +56,7 @@ export async function start(options: {
       config,
       notifier: createNotifier(),
       dashboardUrl: url,
+      linkFor: (session) => getAdapter(session.tool)?.sessionLink?.(session),
       log: (message) => console.error(message),
     }),
   );

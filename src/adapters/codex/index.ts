@@ -1,5 +1,6 @@
 import type { Adapter } from "../types.js";
 import { installCodex, uninstallCodex } from "./install.js";
+import { codexSessionLink } from "./link.js";
 import { codexMeta } from "./meta.js";
 import { normalizeCodex } from "./normalize.js";
 
@@ -8,4 +9,5 @@ export const codexAdapter: Adapter = {
   normalize: normalizeCodex,
   install: installCodex,
   uninstall: uninstallCodex,
+  sessionLink: codexSessionLink,
 };

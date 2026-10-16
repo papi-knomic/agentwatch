@@ -34,6 +34,10 @@ export interface AgentEvent {
    * approved command starting, since no tool fires a hook on approval.
    */
   pid?: number;
+  /** An outstanding question; background work must not clear it before the user's reply. */
+  inputPending?: boolean;
+  /** Internal helper sessions are retained for filtering later events, but never displayed or notified. */
+  hidden?: boolean;
   timestamp: string;
 }
 
@@ -48,6 +52,8 @@ export interface Session {
   titleSource?: TitleSource;
   host?: string;
   pid?: number;
+  inputPending?: boolean;
+  hidden?: boolean;
   startedAt: string;
   /** Last event of any kind. */
   updatedAt: string;
@@ -154,6 +160,8 @@ export function parseAgentEvent(value: unknown): AgentEvent | null {
   if (title && value.titleSource === "tool") event.titleSource = "tool";
   const pid = parsePid(value.pid);
   if (pid) event.pid = pid;
+  if (typeof value.inputPending === "boolean") event.inputPending = value.inputPending;
+  if (value.hidden === true) event.hidden = true;
   const host = nonEmptyString(value.host, 64);
   if (host) event.host = host;
   return event;

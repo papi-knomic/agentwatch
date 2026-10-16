@@ -41,8 +41,8 @@ export function SetupPanel(props: { setup: Setup; onSetup: (setup: Setup) => voi
         <div>
           <h2 id="setup-title">{prominent ? "Connect your agents" : "Agents"}</h2>
           <p className="setup-sub">
-            {connected} of {setup.tools.length} connected
-            {prominent && " · sessions show up here as soon as a connected agent starts or finishes a turn"}
+            {connected} of {setup.tools.length} configured
+            {prominent && " · finish the steps below, then start or resume an agent session"}
           </p>
         </div>
         {!prominent && (
@@ -119,7 +119,7 @@ function ToolRow({ tool, onSetup }: { tool: SetupTool; onSetup: (setup: Setup) =
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4 8.5l2.5 2.5 5.5-6" />
             </svg>
-            Connected
+            Hooks installed
           </span>
         ) : (
           step.kind !== "preview" && (

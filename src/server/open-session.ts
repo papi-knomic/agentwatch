@@ -9,8 +9,9 @@ import { vscodeUrl } from "./notifications.js";
  */
 export const SESSION_LINK_DELAY_MS = 700;
 
-/** URLs to open, in order, to take the user to a session. Empty when it doesn't run in VS Code. */
+/** Standalone app links open directly; VS Code session links need the project window focused first. */
 export function sessionOpenUrls(session: Session, sessionLink: string | undefined): string[] {
+  if (sessionLink && !sessionLink.startsWith("vscode:")) return [sessionLink];
   if (!session.host?.startsWith("VS Code")) return [];
   return sessionLink ? [vscodeUrl(session.cwd), sessionLink] : [vscodeUrl(session.cwd)];
 }

@@ -109,7 +109,7 @@ export function printSetup(setup: SetupState, url: string, running: boolean): vo
     const state = tool.error
       ? `error: ${tool.error}`
       : tool.connected
-        ? "connected"
+        ? "hooks installed"
         : `not connected (${tool.command})`;
     console.log(`  ${tool.label.padEnd(12)} ${state}`);
     if (tool.connected)

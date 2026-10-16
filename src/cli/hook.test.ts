@@ -113,5 +113,32 @@ describe("runHook", () => {
       await runHook("claude-code", STOP);
       expect(received).toEqual([]);
     });
+
+    it("keeps Codex helper and question flags when task titles are disabled", async () => {
+      const port = (server.address() as AddressInfo).port;
+      await writeFile(join(home, "config.json"), JSON.stringify({ port, token: TOKEN, taskTitles: false }));
+      await runHook(
+        "codex",
+        JSON.stringify({
+          session_id: "helper",
+          cwd: "/project",
+          hook_event_name: "UserPromptSubmit",
+          prompt: "This is an app-generated request for a suggested next user message.\nPrivate context",
+        }),
+      );
+      await runHook(
+        "codex",
+        JSON.stringify({
+          session_id: "real",
+          cwd: "/project",
+          hook_event_name: "PostToolUse",
+          tool_name: "request_user_input_async",
+          tool_input: { questions: ["Private question"] },
+        }),
+      );
+      expect(received[0]?.body).toMatchObject({ hidden: true });
+      expect(received[1]?.body).toMatchObject({ inputPending: true, status: "needs_input" });
+      expect(JSON.stringify(received)).not.toMatch(/Private|app-generated|questions/);
+    });
   });
 });

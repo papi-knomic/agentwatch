@@ -26,13 +26,18 @@ export function useAgentStream() {
     const source = new EventSource("/api/stream");
     source.addEventListener("snapshot", (e) => {
       const data = JSON.parse((e as MessageEvent<string>).data) as Snapshot;
-      setSessions(new Map(data.sessions.map((s) => [s.key, s])));
+      setSessions(new Map(data.sessions.filter((s) => !s.hidden).map((s) => [s.key, s])));
       setTools(data.tools);
       setConnection("live");
     });
     source.addEventListener("upsert", (e) => {
       const session = JSON.parse((e as MessageEvent<string>).data) as Session;
-      setSessions((prev) => new Map(prev).set(session.key, session));
+      setSessions((prev) => {
+        const next = new Map(prev);
+        if (session.hidden) next.delete(session.key);
+        else next.set(session.key, session);
+        return next;
+      });
     });
     source.addEventListener("remove", (e) => {
       const { key } = JSON.parse((e as MessageEvent<string>).data) as { key: string };

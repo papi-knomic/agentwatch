@@ -33,6 +33,44 @@ describe("normalizeCodex", () => {
     expect(JSON.stringify(event)).not.toContain("rm -rf");
   });
 
+  it("marks an async question as pending, without carrying its questions or answers", () => {
+    expect(normalizeCodex(fixture("question-async.json"), ctx)).toMatchObject({
+      status: "needs_input",
+      inputPending: true,
+      message: "Waiting for your answer",
+    });
+    expect(normalizeCodex(fixture("user-prompt-submit.json"), ctx)?.inputPending).toBe(false);
+  });
+
+  it.each(["", "**", "  "])("hides the desktop suggestion helper (prefix %j)", (prefix) => {
+    const event = normalizeCodex(
+      {
+        session_id: "helper",
+        cwd: "/project",
+        hook_event_name: "UserPromptSubmit",
+        prompt: `${prefix}This is an app-generated request for a suggested next user message.\nPrivate context`,
+      },
+      ctx,
+    );
+    expect(event).toMatchObject({ hidden: true });
+    expect(event).not.toHaveProperty("title");
+    expect(JSON.stringify(event)).not.toContain("Private context");
+  });
+
+  it("keeps real user tasks about suggestions visible", () => {
+    const event = normalizeCodex(
+      {
+        session_id: "real",
+        cwd: "/project",
+        hook_event_name: "UserPromptSubmit",
+        prompt: "Fix suggested next user messages in the app",
+      },
+      ctx,
+    );
+    expect(event?.status).toBe("working");
+    expect(event?.hidden).toBeUndefined();
+  });
+
   it("never carries tool input, tool output or assistant text", () => {
     for (const file of ["post-tool-use.json", "stop.json"]) {
       expect(JSON.stringify(normalizeCodex(fixture(file), ctx))).not.toMatch(/echo hello|DONE/);
@@ -48,6 +86,19 @@ describe("normalizeCodex", () => {
   it("reports a terminal host when run from one", () => {
     const event = normalizeCodex(fixture("stop.json"), { ...ctx, env: { WT_SESSION: "x" } });
     expect(event?.host).toBe("Windows Terminal");
+  });
+
+  it("identifies desktop sessions ahead of inherited VS Code or terminal variables", () => {
+    expect(
+      normalizeCodex(fixture("stop.json"), {
+        ...ctx,
+        env: {
+          CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
+          TERM_PROGRAM: "vscode",
+          VSCODE_PID: "1234",
+        },
+      })?.host,
+    ).toBe("Codex Desktop");
   });
 
   it("ignores unmapped events", () => {

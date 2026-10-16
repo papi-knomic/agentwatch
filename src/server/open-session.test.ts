@@ -18,6 +18,11 @@ afterEach(() => {
 });
 
 describe("sessionOpenUrls", () => {
+  it("opens standalone app links directly without launching a VS Code window", () => {
+    expect(sessionOpenUrls({ ...base, host: "Codex Desktop" }, "codex://threads/s1")).toEqual([
+      "codex://threads/s1",
+    ]);
+  });
   it("focuses the project window first, then opens the tool's session link", () => {
     expect(sessionOpenUrls({ ...base, host: "VS Code" }, link)).toEqual([
       "vscode://file/C:/projects/my%20app",
@@ -38,6 +43,14 @@ describe("sessionOpenUrls", () => {
 });
 
 describe("createSessionOpener", () => {
+  it("opens desktop chat links immediately", () => {
+    vi.useFakeTimers();
+    const openUrl = vi.fn();
+    const open = createSessionOpener({ linkFor: () => "codex://threads/s1", openUrl });
+    expect(open({ ...base, host: "Codex Desktop" })).toBe(true);
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith("codex://threads/s1");
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("waits before opening the session link so the right window has focus", () => {
     vi.useFakeTimers();
     const opened: string[] = [];

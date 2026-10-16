@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { type Config, defaultToolSettings } from "../core/config.js";
 import { SessionStore } from "../core/store.js";
 import type { AgentEvent } from "../core/types.js";
-import { createNotificationDispatcher, projectName, vscodeUrl } from "./notifications.js";
+import { buildNotification, createNotificationDispatcher, projectName, vscodeUrl } from "./notifications.js";
 
 function setup(overrides: Partial<Config> = {}) {
   const config: Config = {
@@ -119,6 +119,55 @@ describe("notification dispatcher", () => {
 });
 
 describe("helpers", () => {
+  it("uses the app link for auto notification clicks and preserves explicit preferences", () => {
+    const settings = defaultToolSettings("Codex", "#10a37f", "im");
+    const session = {
+      key: "codex:s1",
+      tool: "codex",
+      sessionId: "s1",
+      cwd: "/project",
+      host: "Codex Desktop",
+      status: "done" as const,
+      startedAt: "2026-10-16T12:00:00Z",
+      updatedAt: "2026-10-16T12:00:00Z",
+    };
+    const notification = buildNotification(
+      session,
+      "done",
+      settings,
+      "http://127.0.0.1:7878",
+      "codex://threads/s1",
+    );
+    expect(notification.clickUrl).toBe("codex://threads/s1");
+    expect(notification.actions).toEqual([{ label: "Open dashboard", url: "http://127.0.0.1:7878" }]);
+    expect(
+      buildNotification(
+        session,
+        "done",
+        { ...settings, clickAction: "dashboard" },
+        "http://127.0.0.1:7878",
+        "codex://threads/s1",
+      ).clickUrl,
+    ).toBe("http://127.0.0.1:7878");
+    expect(
+      buildNotification(
+        session,
+        "done",
+        { ...settings, clickAction: "none" },
+        "http://127.0.0.1:7878",
+        "codex://threads/s1",
+      ).clickUrl,
+    ).toBeUndefined();
+    expect(
+      buildNotification(
+        session,
+        "done",
+        { ...settings, clickAction: "vscode" },
+        "http://127.0.0.1:7878",
+        "codex://threads/s1",
+      ).clickUrl,
+    ).toBe("vscode://file/project");
+  });
   it("projectName handles both path styles", () => {
     expect(projectName("C:\\Users\\dev\\my-app")).toBe("my-app");
     expect(projectName("/home/dev/my-app/")).toBe("my-app");

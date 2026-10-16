@@ -43,8 +43,8 @@ export interface Adapter {
   install(options: InstallOptions): Promise<InstallResult>;
   uninstall(options: InstallOptions): Promise<InstallResult>;
   /**
-   * A link that opens this exact session in the tool's own UI. It is opened after the project's
-   * VS Code window has been brought to the front, so it may rely on that window having focus.
+   * A link that opens this exact session in the tool's own UI. VS Code links wait until the project's
+   * window has been brought to the front; standalone app links open directly.
    */
   sessionLink?(session: Session): string | undefined;
 }
