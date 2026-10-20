@@ -1,6 +1,6 @@
 {
   "name": "@kn0mic/agentwatch",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "One local dashboard and desktop notifications for all your AI coding agents (Claude Code, Codex, Grok, OpenCode).",
   "keywords": [
     "claude-code",
