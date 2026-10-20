@@ -1,9 +1,12 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
 import {
+  type AgentCount,
+  agentsInUse,
   groupByProject,
   isFinished,
   isStalled,
+  matchesAgent,
   needsApprovalHint,
   needsYou,
   type Project,
@@ -62,6 +65,27 @@ function useStoredFlag(key: string, fallback: boolean): [boolean, (value: boolea
   return [value, update];
 }
 
+/** Like useStoredFlag, for an optional string; null removes it. */
+function useStoredString(key: string): [string | null, (value: string | null) => void] {
+  const [value, setValue] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  });
+  const update = (next: string | null) => {
+    setValue(next);
+    try {
+      if (next === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, next);
+    } catch {
+      // Only a convenience.
+    }
+  };
+  return [value, update];
+}
+
 export function App() {
   const { sessions, tools, connection } = useAgentStream();
   const { setup, replace: replaceSetup } = useSetup();
@@ -69,19 +93,32 @@ export function App() {
   const readySetup = setup !== null && setup !== "unavailable" ? setup : null;
   const [hideFinished, setHideFinished] = useStoredFlag("hide-finished", false);
   const [collapsedProjects, toggleProject] = useCollapsedProjects();
+  const [storedAgent, setAgent] = useStoredString("agent-filter");
   const now = useNow(15_000);
 
   const toolById = useMemo(() => new Map(tools.map((t) => [t.id, t])), [tools]);
-  const attention = sortByUrgency(sessions.filter(needsYou));
-  const finished = sessions.filter(isFinished);
-  const projects = groupByProject(sessions.filter((s) => !needsYou(s) && !(hideFinished && isFinished(s))));
+  const agents = agentsInUse(sessions, tools);
+  // A remembered filter for an agent with nothing on the board shows everything.
+  const agent = agents.some((a) => a.id === storedAgent) ? storedAgent : null;
+  const visible = sessions.filter((s) => matchesAgent(s, agent));
+  // The top bar and the tab title count every agent: a filter must never hide that something needs you.
+  const allAttention = sessions.filter(needsYou).length;
+  const attention = sortByUrgency(visible.filter(needsYou));
+  const hiddenAttention = allAttention - attention.length;
+  const finished = visible.filter(isFinished);
+  const projects = groupByProject(visible.filter((s) => !needsYou(s) && !(hideFinished && isFinished(s))));
   // A tag that says the same thing on every row is noise.
-  const showTool = new Set(sessions.map((s) => s.tool)).size > 1;
+  const showTool = agents.length > 1;
   const count = (status: Status) => sessions.filter((s) => s.status === status).length;
 
   useEffect(() => {
-    document.title = attention.length > 0 ? `(${attention.length}) ${APP_DISPLAY_NAME}` : APP_DISPLAY_NAME;
-  }, [attention.length]);
+    document.title = allAttention > 0 ? `(${allAttention}) ${APP_DISPLAY_NAME}` : APP_DISPLAY_NAME;
+  }, [allAttention]);
+
+  // Forget the filter once that agent's sessions are gone, so its next session doesn't silently hide the rest.
+  useEffect(() => {
+    if (connection === "live" && storedAgent !== null && agent === null) setAgent(null);
+  }, [connection, storedAgent, agent, setAgent]);
 
   const rowProps = { toolById, showTool, now };
 
@@ -94,9 +131,9 @@ export function App() {
             <span>{APP_DISPLAY_NAME}</span>
           </div>
           <div className="counts">
-            <Count tone="attention" value={attention.length} label="need you" />
+            <Count tone="attention" value={allAttention} label="need you" />
             <Count tone="working" value={count("working")} label="working" />
-            <Count tone="done" value={finished.length} label="done" />
+            <Count tone="done" value={sessions.filter(isFinished).length} label="done" />
           </div>
           {finished.length > 0 && (
             <button
@@ -121,6 +158,22 @@ export function App() {
           )
         ) : (
           <>
+            {agents.length > 1 && (
+              <AgentFilter agents={agents} total={sessions.length} selected={agent} onSelect={setAgent} />
+            )}
+
+            {hiddenAttention > 0 && (
+              <p className="filter-note">
+                {hiddenAttention === 1
+                  ? "1 session from another agent needs you"
+                  : `${hiddenAttention} sessions from other agents need you`}{" "}
+                ·{" "}
+                <button type="button" className="text-button" onClick={() => setAgent(null)}>
+                  Show all
+                </button>
+              </p>
+            )}
+
             {attention.length > 0 && (
               <section className="lane" aria-labelledby="lane-title">
                 <h2 id="lane-title" className="lane-head">
@@ -190,6 +243,48 @@ function ConnectionBadge({ connection }: { connection: Connection }) {
       <span className="connection-dot" />
       {label}
     </span>
+  );
+}
+
+/**
+ * One agent at a time, or all. Each agent's colour is a square swatch: status icons are round, and the default
+ * tool colours are close to the status colours (Codex green vs done, Claude orange vs needs you).
+ */
+function AgentFilter({
+  agents,
+  total,
+  selected,
+  onSelect,
+}: {
+  agents: AgentCount[];
+  total: number;
+  selected: string | null;
+  onSelect: (agent: string | null) => void;
+}) {
+  return (
+    <nav className="agent-filter" aria-label="Filter by agent">
+      <button
+        type="button"
+        className={selected === null ? "agent-chip all on" : "agent-chip all"}
+        aria-pressed={selected === null}
+        onClick={() => onSelect(null)}
+      >
+        All agents <span className="agent-count">{total}</span>
+      </button>
+      {agents.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          className={selected === a.id ? "agent-chip on" : "agent-chip"}
+          style={{ "--tool": a.color ?? "var(--muted)" } as CSSProperties}
+          aria-pressed={selected === a.id}
+          onClick={() => onSelect(selected === a.id ? null : a.id)}
+        >
+          <span className="tool-swatch" />
+          {a.label} <span className="agent-count">{a.count}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -353,7 +448,6 @@ function SessionRow({
   const name = title ?? (showProject ? project : "Untitled session");
   const detail = detailFor(session);
   const stalled = isStalled(session);
-  const source = [showTool ? (tool?.label ?? session.tool) : undefined, session.host].filter(Boolean);
   const openTarget =
     session.host === "Codex Desktop" ? "Codex" : session.host?.startsWith("VS Code") ? "VS Code" : undefined;
 
@@ -388,7 +482,18 @@ function SessionRow({
         <span className="row-since" title={new Date(statusSince(session)).toLocaleString()}>
           {statusDuration(session, now)}
         </span>
-        {source.length > 0 && <span className="row-source">{source.join(" · ")}</span>}
+        {(showTool || session.host) && (
+          <span className="row-source">
+            {showTool && (
+              <span className="tool-tag">
+                <span className="tool-swatch" />
+                {tool?.label ?? session.tool}
+              </span>
+            )}
+            {showTool && session.host && " · "}
+            {session.host}
+          </span>
+        )}
       </div>
       <div className="row-actions">
         {openTarget && <OpenButton sessionKey={session.key} target={openTarget} />}

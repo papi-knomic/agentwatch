@@ -1,6 +1,35 @@
-import type { Session } from "./useAgentStream";
+import type { Session, ToolInfo } from "./useAgentStream";
 
 export type Status = Session["status"];
+
+export interface AgentCount {
+  id: string;
+  label: string;
+  color?: string;
+  count: number;
+}
+
+/**
+ * The agents that have sessions on the board, in the server's tool order so the filter buttons don't
+ * jump around as counts change. A tool the server didn't describe (an older server) goes last, by id.
+ */
+export function agentsInUse(sessions: Session[], tools: ToolInfo[]): AgentCount[] {
+  const counts = new Map<string, number>();
+  for (const session of sessions) counts.set(session.tool, (counts.get(session.tool) ?? 0) + 1);
+  const known = tools
+    .filter((tool) => counts.has(tool.id))
+    .map((tool) => ({ id: tool.id, label: tool.label, color: tool.color, count: counts.get(tool.id) ?? 0 }));
+  const unknown = [...counts.keys()]
+    .filter((id) => !tools.some((tool) => tool.id === id))
+    .sort()
+    .map((id) => ({ id, label: id, count: counts.get(id) ?? 0 }));
+  return [...known, ...unknown];
+}
+
+/** null shows every agent. */
+export function matchesAgent(session: Session, agent: string | null): boolean {
+  return agent === null || session.tool === agent;
+}
 
 /** When the session entered its current status. A server started before the field existed omits it. */
 export function statusSince(session: Session): string {

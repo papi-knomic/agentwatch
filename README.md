@@ -111,6 +111,10 @@ A notification is sent when a session **moves into** one of these statuses:
 
 Clicking a notification opens the project in VS Code if the session runs there; otherwise it opens the dashboard.
 
+When sessions from more than one agent are on the dashboard, each row shows its agent with a square swatch in that
+agent's colour, and buttons at the top filter the board to one agent. The filter is remembered in your browser.
+The top bar and the tab title still count every agent, and a note says when another agent's session needs you.
+
 On the dashboard, **Open in VS Code** brings the project's window to the front. For a session in the Claude Code
 extension it then switches to that session's tab, even when several Claude tabs are open. Sessions in a standalone
 terminal have no button, because a terminal tab can't be focused from outside.
@@ -122,8 +126,8 @@ PowerShell before install) and turn off Do Not Disturb.
 ### Settings
 
 Edit `~/.agentwatch/config.json` (created on first start), then restart the dashboard (`agentwatch stop`, then
-`agentwatch start --background`). Each tool has its own block under `tools`, keyed `claude-code`, `codex` and
-`grok`. Any setting you leave out keeps its default, so you only need to write what you change:
+`agentwatch start --background`). Each tool has its own block under `tools`, keyed `claude-code`, `codex`, `grok`
+and `opencode`. Any setting you leave out keeps its default, so you only need to write what you change:
 
 ```jsonc
 {
@@ -135,7 +139,7 @@ Edit `~/.agentwatch/config.json` (created on first start), then restart the dash
     "claude-code": {
       "enabled": true,
       "label": "Claude",        // shown in notifications and on the dashboard
-      "color": "#d97757",
+      "color": "#d97757",       // the agent's swatch on the dashboard
       "sound": "im",            // default | im | mail | reminder | sms | alarm | silent
       "notifyOn": { "needs_input": true, "done": false, "error": true },
       "clickAction": "auto"     // auto | vscode | dashboard | none
