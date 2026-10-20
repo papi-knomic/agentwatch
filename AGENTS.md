@@ -9,7 +9,7 @@ A local, open-source dashboard and notifier for AI coding agents. When you run s
 (in VS Code, in a terminal, or in a desktop app), it shows every session in one browser page. It also sends a
 desktop notification when one needs your input or has finished. You can set notifications up differently for each tool.
 
-- **Status:** 0.1. Server, dashboard, Windows notifications, start at login and the Claude Code, Codex and Grok adapters work.
+- **Status:** 0.1. Server, dashboard, Windows notifications, start at login and the Claude Code, Codex, Grok and OpenCode adapters work.
 - **Name:** `agentwatch` (npm package and command; display name "AgentWatch"). Don't hard-code it: use `APP_NAME` /
   `APP_DISPLAY_NAME` from `src/core/constants.ts`, kept in sync with `package.json`.
 - **Distribution:** `npm install -g @kn0mic/agentwatch && agentwatch setup`. The package is scoped because npm
@@ -28,6 +28,7 @@ agent hook ──▶ `agentwatch hook --tool <id>` ───HTTP POST──▶ l
 ```
 
 Each AI tool fires its own hooks (Claude Code `Notification`/`Stop`, Codex `notify`, Grok `Stop`/`Notification`).
+OpenCode has no shell hooks: we install a plugin file it loads, which pipes bus events into the same `hook` command.
 The hook runs our small CLI, which turns the raw event into one shared format and sends it to the server.
 
 ### Layout
@@ -151,6 +152,10 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.
+- OpenCode: payloads verified by capture (OpenCode 1.19.3 TUI). Hooks in via a generated plugin
+  (`~/.config/opencode/plugins/agentwatch.js`, on Windows too) that forwards cut-down events to `hook`; OpenCode must
+  be restarted to load it. No event on quit: sessions go when the OpenCode pid exits. Errors, retries, Esc and
+  subagent sessions follow the SDK types but weren't captured. OpenCode's `dev` branch is rewriting the plugin API.
 - Grok also runs hooks from Claude Code's settings.json. The Claude Code adapter ignores calls that have `GROK_*` env vars.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach the local server.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks and are out of scope.

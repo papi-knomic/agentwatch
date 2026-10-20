@@ -1,0 +1,22 @@
+{
+  "id": "evt_constructed000000000child",
+  "type": "session.created",
+  "properties": {
+    "sessionID": "ses_child00000000000000000001",
+    "info": {
+      "id": "ses_child00000000000000000001",
+      "slug": "quiet-heron",
+      "version": "1.19.3",
+      "projectID": "global",
+      "directory": "C:\\Users\\dev\\projects\\web",
+      "path": "Users/dev/projects/web",
+      "parentID": "ses_ea930fb5affekKS0B120gDMDYx",
+      "title": "Child session - 2026-10-20T00:58:00.000Z",
+      "agent": "general",
+      "time": {
+        "created": 1792457880000,
+        "updated": 1792457880000
+      }
+    }
+  }
+}

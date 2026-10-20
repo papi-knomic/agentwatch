@@ -117,7 +117,7 @@ export async function setupCommand(options: {
       : `Dashboard running at ${url}`,
   );
   console.log(
-    "\nStart a new agent session (Claude Code, Codex or Grok) and it will show up on the dashboard.",
+    "\nStart a new agent session (Claude Code, Codex, Grok or OpenCode) and it will show up on the dashboard.",
   );
   if (options.open) openUrl(url);
 }

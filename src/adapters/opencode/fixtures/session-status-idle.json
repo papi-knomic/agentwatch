@@ -1,0 +1,10 @@
+{
+  "id": "evt_156cf43f0001CW1cbuhuQEEFzf",
+  "type": "session.status",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "status": {
+      "type": "idle"
+    }
+  }
+}

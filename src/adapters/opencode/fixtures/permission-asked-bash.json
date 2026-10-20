@@ -1,0 +1,22 @@
+{
+  "id": "evt_156cf6b46002AkzDLBhBV0kBHq",
+  "type": "permission.asked",
+  "properties": {
+    "id": "per_156cf6b46001QW30zstIuMk7lZ",
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "permission": "bash",
+    "patterns": [
+      "cmd /c dir"
+    ],
+    "metadata": {
+      "command": "cmd /c dir"
+    },
+    "always": [
+      "cmd *"
+    ],
+    "tool": {
+      "messageID": "msg_156cf6049001iv18OTPpQY4dfP",
+      "callID": "call_bd1196c60349488480e7625fc2518d63"
+    }
+  }
+}

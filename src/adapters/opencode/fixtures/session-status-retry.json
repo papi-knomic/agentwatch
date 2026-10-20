@@ -1,0 +1,13 @@
+{
+  "id": "evt_constructed0000000000retry",
+  "type": "session.status",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "status": {
+      "type": "retry",
+      "attempt": 2,
+      "message": "Rate limited, retrying",
+      "next": 1792457800000
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "permission.updated",
+  "properties": {
+    "id": "per_constructed000000000legacy",
+    "type": "bash",
+    "pattern": "cmd /c dir",
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "messageID": "msg_156cf6049001iv18OTPpQY4dfP",
+    "title": "cmd /c dir",
+    "metadata": {},
+    "time": {
+      "created": 1792457796423
+    }
+  }
+}

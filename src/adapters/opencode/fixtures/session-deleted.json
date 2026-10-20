@@ -1,0 +1,20 @@
+{
+  "id": "evt_constructed00000000deleted",
+  "type": "session.deleted",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "info": {
+      "id": "ses_ea930fb5affekKS0B120gDMDYx",
+      "slug": "cosmic-otter",
+      "version": "1.19.3",
+      "projectID": "global",
+      "directory": "C:\\Users\\dev\\projects\\web",
+      "path": "Users/dev/projects/web",
+      "title": "Adding \"world\" to hello.txt",
+      "time": {
+        "created": 1792457770149,
+        "updated": 1792457831016
+      }
+    }
+  }
+}

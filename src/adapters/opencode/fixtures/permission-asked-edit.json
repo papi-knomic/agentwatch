@@ -1,0 +1,33 @@
+{
+  "id": "evt_156cf2f27001YI1l3yF1pI1hfR",
+  "type": "permission.asked",
+  "properties": {
+    "id": "per_156cf2f22001Pl5d6N59M5DYkl",
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "permission": "edit",
+    "patterns": [
+      "Users/dev/projects/web/hello.txt"
+    ],
+    "metadata": {
+      "filepath": "Users/dev/projects/web/hello.txt",
+      "diff": "Index: C:\\Users\\dev\\projects\\web\\hello.txt\n===================================================================\n--- C:\\Users\\dev\\projects\\web\\hello.txt\n+++ C:\\Users\\dev\\projects\\web\\hello.txt\n@@ -1,1 +1,2 @@\n hello\n+world\n\n",
+      "files": [
+        {
+          "filePath": "C:\\Users\\dev\\projects\\web\\hello.txt",
+          "relativePath": "Users/dev/projects/web/hello.txt",
+          "type": "update",
+          "patch": "Index: C:\\Users\\dev\\projects\\web\\hello.txt\n===================================================================\n--- C:\\Users\\dev\\projects\\web\\hello.txt\n+++ C:\\Users\\dev\\projects\\web\\hello.txt\n@@ -1,1 +1,2 @@\n hello\n+world\n",
+          "additions": 1,
+          "deletions": 0
+        }
+      ]
+    },
+    "always": [
+      "*"
+    ],
+    "tool": {
+      "messageID": "msg_156cf2354001xPgX9esZPQoYZR",
+      "callID": "call_0231007d88d84c9bba55bc78742ae6bc"
+    }
+  }
+}

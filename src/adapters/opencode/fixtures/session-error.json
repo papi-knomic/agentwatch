@@ -1,0 +1,16 @@
+{
+  "id": "evt_constructed0000000000error",
+  "type": "session.error",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "error": {
+      "name": "APIError",
+      "data": {
+        "message": "You exceeded your current quota",
+        "statusCode": 429,
+        "isRetryable": false,
+        "responseBody": "{\"error\":{\"message\":\"You exceeded your current quota\"}}"
+      }
+    }
+  }
+}

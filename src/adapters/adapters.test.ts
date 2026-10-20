@@ -64,11 +64,22 @@ describe.each(adapters.map((a) => [a.meta.id, a] as const))("adapter %s", (id, a
     expect(await readFile(path, "utf8")).toBe(before);
   });
 
-  it("uninstall restores a pre-existing file exactly", async () => {
+  it("never damages a pre-existing file: merges into it and uninstall restores it, or refuses", async () => {
     const path = await configPathFor();
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, JSON.stringify(FOREIGN));
-    await adapter.install(options);
+    const original = JSON.stringify(FOREIGN);
+    await writeFile(path, original);
+    // Adapters that own their file outright (e.g. a plugin script) refuse to overwrite one they didn't write.
+    const refused = await adapter.install(options).then(
+      () => false,
+      () => true,
+    );
+    if (refused) {
+      expect(await readFile(path, "utf8")).toBe(original);
+      expect((await adapter.uninstall(options)).changed).toBe(false);
+      expect(await readFile(path, "utf8")).toBe(original);
+      return;
+    }
     const installed = await readJsonIfExists(path);
     expect(installed).toMatchObject({ someSetting: true });
     expect(JSON.stringify(installed)).toContain("echo someone-else");

@@ -1,7 +1,7 @@
 # AgentWatch
 
 One local dashboard and desktop notifications for all your AI coding agents. If you run several Claude Code,
-Codex or Grok sessions at once (in VS Code windows, terminals or desktop apps), you can see in one place which
+Codex, Grok or OpenCode sessions at once (in VS Code windows, terminals or desktop apps), you can see in one place which
 ones are working, which are done, and which are **waiting on you**. You also get a notification you can customize for each tool.
 
 - **Local only.** The server listens on `127.0.0.1`. No telemetry, no accounts, no internet requests.
@@ -10,7 +10,7 @@ ones are working, which are done, and which are **waiting on you**. You also get
 - **Private.** Code and prompts are never stored. Each session's name is the exception: Claude Code's own session title,
   or the first line of the first prompt, cut to 80 characters. Turn it off with `"taskTitles": false`.
 
-Status: **early (0.1)**. Claude Code, Codex and Grok are supported, and their event formats were checked against real captured payloads.
+Status: **early (0.1)**. Claude Code, Codex, Grok and OpenCode are supported, and their event formats were checked against real captured payloads.
 
 ## Get started
 
@@ -22,7 +22,8 @@ agentwatch setup
 ```
 
 `setup` does everything in one go:
-1. Connects Claude Code, Codex and Grok by adding hooks to their configs. Every edited file is backed up first.
+1. Connects Claude Code, Codex, Grok and OpenCode by adding hooks (for OpenCode, a plugin file) to their configs.
+   Every edited file is backed up first.
 2. Makes the dashboard start when you log in.
 3. Starts the dashboard in the background and opens it at http://127.0.0.1:7878.
 
@@ -32,6 +33,7 @@ Sessions that were already open don't pick up the new hooks.
 What else each tool needs:
 - **Claude Code:** nothing. Start a new session.
 - **Grok:** nothing. Its personal hooks folder (`~/.grok/hooks`) needs no trust step.
+- **OpenCode:** restart it. It loads plugins only when it starts.
 - **Codex:** approve the new hooks once. Codex skips hooks you haven't trusted. Run `/hooks` in the Codex CLI and
   approve them. No `codex` command on your PATH? The VS Code extension ships the CLI at
   `~/.vscode/extensions/openai.chatgpt-<version>/bin/<platform>/codex` (`codex.exe` on Windows); start it in a
@@ -46,7 +48,7 @@ agentwatch status                              # dashboard running? each tool "c
 agentwatch notify-test --status needs_input    # you should see a desktop notification
 ```
 
-Then send a prompt in a new Claude Code, Codex or Grok session: its row appears on the dashboard within a second.
+Then send a prompt in a new Claude Code, Codex, Grok or OpenCode session: its row appears on the dashboard within a second.
 If it doesn't, see [Troubleshooting](#troubleshooting).
 
 Prefer to connect tools one at a time? Open the dashboard. The **Connect your agents** panel shows each tool's status
@@ -63,7 +65,7 @@ and lets you preview and connect it with a click. It also has the terminal comma
 | `agentwatch start --background` | Start the dashboard without a window (it also starts at login after `setup`) |
 | `agentwatch stop` | Stop it |
 | `agentwatch notify-test --status needs_input` | Show a sample notification |
-| `agentwatch install --tool <claude-code\|codex\|grok\|all> [--dry-run]` | Connect one tool |
+| `agentwatch install --tool <claude-code\|codex\|grok\|opencode\|all> [--dry-run]` | Connect one tool |
 | `agentwatch uninstall --tool all` | Remove all hooks, start at login and the notification registration |
 
 ### Updating
@@ -85,6 +87,7 @@ If release notes mention new hooks, run `agentwatch install --tool all` again (a
 | Claude Code | `~/.claude/settings.json` | ✅ | ✅ | ✅ | [adapter docs](src/adapters/claude-code/README.md) |
 | Codex | `~/.codex/hooks.json` | ✅ (permissions and async questions) | ✅ | ❌ no such event | Trust the hooks once via `/hooks`. [adapter docs](src/adapters/codex/README.md) |
 | Grok | `~/.grok/hooks/agentwatch.json` (its own file) | ⚠️ only messages asking for a decision | ✅ | ✅ | [adapter docs](src/adapters/grok/README.md) |
+| OpenCode | `~/.config/opencode/plugins/agentwatch.js` (its own plugin) | ✅ (permissions and questions) | ✅ | ✅ | Restart OpenCode after installing. Works with any model provider. [adapter docs](src/adapters/opencode/README.md) |
 
 Hooks are set per user, not per app, so sessions are picked up from the CLI in any terminal and from the VS Code
 extensions too.
@@ -196,7 +199,8 @@ the session switches to "working · Running approved command", usually within a 
 - macOS and Linux notifications and start at login are implemented but not yet tested on those systems. macOS notifications can't be clicked.
 - Codex and Grok don't expose their process id to hooks, so after you approve a command there, the session stays at
   "needs input" until the command finishes. The same goes for Claude Code permission prompts that don't run a shell (e.g.
-  file edits), but those finish almost instantly.
+  file edits), but those finish almost instantly. OpenCode reports approvals itself, so it isn't affected.
+- OpenCode sends no event when you quit it. Its sessions disappear within a minute of the OpenCode process exiting.
 
 ## Development
 

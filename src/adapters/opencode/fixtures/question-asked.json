@@ -1,0 +1,32 @@
+{
+  "id": "evt_156cfb128002LpGwmyoIhmUhKo",
+  "type": "question.asked",
+  "properties": {
+    "id": "que_156cfb128001syZq1r42zevPk2",
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "questions": [
+      {
+        "question": "Which colour should I write to `hello.txt`?",
+        "header": "Colour",
+        "options": [
+          {
+            "label": "Red",
+            "description": "Write `red`."
+          },
+          {
+            "label": "Blue",
+            "description": "Write `blue`."
+          },
+          {
+            "label": "Green",
+            "description": "Write `green`."
+          }
+        ]
+      }
+    ],
+    "tool": {
+      "messageID": "msg_156cfa673001ZQ1wO9CuRao1tk",
+      "callID": "call_4c3a22493dc54273853e7c7dc3e68a79"
+    }
+  }
+}

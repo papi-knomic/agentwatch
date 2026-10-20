@@ -1,0 +1,40 @@
+{
+  "id": "evt_156cf0fdc001pNCf3qV9a23xUM",
+  "type": "session.updated",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "info": {
+      "id": "ses_ea930fb5affekKS0B120gDMDYx",
+      "slug": "cosmic-otter",
+      "projectID": "global",
+      "directory": "C:\\Users\\dev\\projects\\web",
+      "path": "Users/dev/projects/web",
+      "title": "Adding \"world\" to hello.txt",
+      "agent": "build",
+      "model": {
+        "id": "gpt-5.6-terra-fast",
+        "providerID": "openai"
+      },
+      "version": "1.19.3",
+      "summary": {
+        "additions": 0,
+        "deletions": 0,
+        "files": 0
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1792457770149,
+        "updated": 1792457770467
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "evt_156cf0528001FGIclkNgskPLuc",
+  "type": "session.status",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "status": {
+      "type": "busy"
+    }
+  }
+}

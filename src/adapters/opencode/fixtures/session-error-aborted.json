@@ -1,0 +1,13 @@
+{
+  "id": "evt_constructed00000000aborted",
+  "type": "session.error",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "error": {
+      "name": "MessageAbortedError",
+      "data": {
+        "message": "The operation was aborted."
+      }
+    }
+  }
+}
