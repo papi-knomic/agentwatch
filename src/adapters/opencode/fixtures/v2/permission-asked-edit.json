@@ -1,0 +1,35 @@
+{
+  "id": "evt_1bfac0fe6002fOvndRBXUKjklp",
+  "created": 1794217086950,
+  "type": "permission.asked",
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  },
+  "data": {
+    "id": "per_1bfac0fe6001UGOV6brgri2HJF",
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "action": "edit",
+    "resources": [
+      "hello.txt"
+    ],
+    "save": [
+      "*"
+    ],
+    "metadata": {
+      "files": [
+        {
+          "file": "hello.txt",
+          "patch": "Index: hello.txt\n===================================================================\n--- hello.txt\n+++ hello.txt\n@@ -1,1 +1,1 @@\n-hello\n+hello world\n",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ]
+    },
+    "source": {
+      "type": "tool",
+      "messageID": "msg_1bfac0056001CM9RnMsiQnCmHC",
+      "id": "2e490f2c-a269-479a-af9f-20b51205671a"
+    }
+  }
+}

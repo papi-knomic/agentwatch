@@ -1,0 +1,10 @@
+{
+  "id": "evt_constructedsessiondelet",
+  "type": "session.deleted",
+  "data": {
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8"
+  },
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "evt_constructedsessioncreat",
+  "type": "session.created",
+  "data": {
+    "sessionID": "ses_v2child00000000000000000001",
+    "projectID": "global",
+    "location": {
+      "directory": "C:\\Users\\dev\\projects\\web"
+    },
+    "parentID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "slug": "quiet-heron",
+    "version": "2.2.6"
+  },
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "evt_1bfac4c4e002XiSax8KSUCEOZH",
+  "created": 1794217102414,
+  "type": "permission.asked",
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  },
+  "data": {
+    "id": "per_1bfac4c4e0016J6kBAabJGOyKl",
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "action": "shell",
+    "resources": [
+      "dir"
+    ],
+    "save": [
+      "dir *"
+    ],
+    "source": {
+      "type": "tool",
+      "messageID": "msg_1bfac4173001rHB5TbMINfkmyE",
+      "id": "5f69b05e-96ab-42f7-97b3-7865597b8c67"
+    }
+  }
+}

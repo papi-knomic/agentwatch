@@ -1,0 +1,43 @@
+{
+  "id": "evt_1bfabdb4b001rTbNNQhiQ3JChq",
+  "created": 1794217073483,
+  "type": "form.created",
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  },
+  "data": {
+    "form": {
+      "id": "frm_1bfabdb4a001ao3P8fbhxlq1qP",
+      "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+      "title": "Questions",
+      "metadata": {
+        "kind": "question",
+        "tool": {
+          "messageID": "msg_1bfabc3d2001udzXbDEhTu5Kps",
+          "id": "94281217-1e62-42f7-bfd2-6148a1e4b045"
+        }
+      },
+      "fields": [
+        {
+          "key": "q0",
+          "title": "Add word",
+          "description": "What word should I add to `hello.txt`, and where?",
+          "type": "string",
+          "options": [
+            {
+              "value": "Append \"world\"",
+              "label": "Append \"world\"",
+              "description": "Add \"world\" at the end of the file (e.g., `hello world`)"
+            },
+            {
+              "value": "Append \"there\"",
+              "label": "Append \"there\"",
+              "description": "Add \"there\" at the end of the file (e.g., `hello there`)"
+            }
+          ],
+          "custom": true
+        }
+      ]
+    }
+  }
+}

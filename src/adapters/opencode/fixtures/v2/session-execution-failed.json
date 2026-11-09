@@ -1,0 +1,18 @@
+{
+  "id": "evt_constructedsessionexecu",
+  "type": "session.execution.failed",
+  "data": {
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "error": {
+      "type": "api",
+      "message": "You exceeded your current quota",
+      "status": 429,
+      "response": {
+        "body": "{\"error\":{\"message\":\"You exceeded your current quota\"}}"
+      }
+    }
+  },
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  }
+}

@@ -8,7 +8,7 @@ interface BusEvent {
 }
 
 const fixture = (name: string): BusEvent =>
-  JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
+  JSON.parse(readFileSync(new URL(`./fixtures/v1/${name}`, import.meta.url), "utf8"));
 
 const SESSION = "ses_ea930fb5affekKS0B120gDMDYx";
 const CWD = "C:\\Users\\dev\\projects\\web";
@@ -135,5 +135,95 @@ describe("normalizeOpenCode", () => {
       normalizeOpenCode({ ...envelope("session-idle.json"), event: { type: "session.idle" } }, ctx),
     ).toBeNull();
     expect(normalizeOpenCode(fixture("session-idle.json"), ctx)).toBeNull();
+  });
+});
+
+const fixtureV2 = (name: string): { type: string; data: Record<string, unknown> } =>
+  JSON.parse(readFileSync(new URL(`./fixtures/v2/${name}`, import.meta.url), "utf8"));
+
+const SESSION_V2 = "ses_e40543cc2ffewW3gz0p0TD4jA8";
+
+/** What plugin.ts sends for an OpenCode 2.x event. */
+const envelopeV2 = (name: string, extra: Record<string, unknown> = {}) => {
+  const { type, data } = fixtureV2(name);
+  return { v: 2, event: { type, data }, directory: CWD, pid: 4242, at: AT, ...extra };
+};
+
+describe("normalizeOpenCode, OpenCode 2.x", () => {
+  it.each([
+    ["session-execution-started.json", "working"],
+    ["session-status-busy.json", "working"],
+    ["session-status-retry.json", "working"],
+    ["session-execution-succeeded.json", "done"],
+    ["session-execution-failed.json", "error"],
+    ["session-execution-interrupted-user.json", "idle"],
+    ["session-execution-interrupted-shutdown.json", "idle"],
+    ["session-deleted.json", "ended"],
+    ["permission-asked-edit.json", "needs_input"],
+    ["permission-asked-shell.json", "needs_input"],
+    ["permission-replied-once.json", "working"],
+    ["permission-replied-reject.json", "working"],
+    ["form-created.json", "needs_input"],
+    ["form-replied.json", "working"],
+    ["form-cancelled.json", "working"],
+  ])("%s → %s", (file, status) => {
+    expect(normalizeOpenCode(envelopeV2(file), ctx)).toMatchObject({
+      tool: "opencode",
+      sessionId: SESSION_V2,
+      cwd: CWD,
+      status,
+      pid: 4242,
+      timestamp: AT,
+    });
+  });
+
+  it.each([
+    "session-status-idle.json",
+    "session-created.json",
+    "session-renamed.json",
+    "session-execution-interrupted-superseded.json",
+    "form-created-global.json",
+  ])("ignores %s", (file) => {
+    expect(normalizeOpenCode(envelopeV2(file), ctx)).toBeNull();
+  });
+
+  it("names the permission's action without passing on the command or file", () => {
+    const shell = normalizeOpenCode(envelopeV2("permission-asked-shell.json"), ctx);
+    expect(shell?.message).toBe("Permission needed: shell");
+    expect(JSON.stringify(shell)).not.toContain('"dir');
+    const edit = normalizeOpenCode(envelopeV2("permission-asked-edit.json"), ctx);
+    expect(edit?.message).toBe("Permission needed: edit");
+    expect(JSON.stringify(edit)).not.toContain("hello.txt");
+  });
+
+  it("keeps the form's question out of the message", () => {
+    const event = normalizeOpenCode(envelopeV2("form-created.json"), ctx);
+    expect(event?.message).toBe("Has a question for you");
+    expect(JSON.stringify(event)).not.toContain("What word");
+  });
+
+  it("reports the failure's message, Esc as interrupted, and a rejected permission as stopped", () => {
+    expect(normalizeOpenCode(envelopeV2("session-execution-failed.json"), ctx)?.message).toBe(
+      "You exceeded your current quota",
+    );
+    expect(normalizeOpenCode(envelopeV2("session-execution-interrupted-user.json"), ctx)?.message).toBe(
+      "Interrupted",
+    );
+    // Captured: OpenCode 2.2.6 ends the turn with reason "shutdown" right after a rejected permission.
+    expect(normalizeOpenCode(envelopeV2("session-execution-interrupted-shutdown.json"), ctx)?.message).toBe(
+      "Stopped",
+    );
+  });
+
+  it("puts a subagent's form on the parent session and ignores its own lifecycle", () => {
+    const root = { rootSessionID: "ses_parent" };
+    expect(normalizeOpenCode(envelopeV2("form-created.json", root), ctx)?.sessionId).toBe("ses_parent");
+    expect(normalizeOpenCode(envelopeV2("session-execution-succeeded.json", root), ctx)).toBeNull();
+  });
+
+  it("does not read 2.x data as 1.x properties, or the other way round", () => {
+    const { v: _v, ...asV1 } = envelopeV2("session-execution-succeeded.json");
+    expect(normalizeOpenCode(asV1, ctx)).toBeNull();
+    expect(normalizeOpenCode({ ...envelope("session-idle.json"), v: 2 }, ctx)).toBeNull();
   });
 });

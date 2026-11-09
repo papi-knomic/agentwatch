@@ -87,7 +87,7 @@ If release notes mention new hooks, run `agentwatch install --tool all` again (a
 | Claude Code | `~/.claude/settings.json` | ✅ | ✅ | ✅ | [adapter docs](src/adapters/claude-code/README.md) |
 | Codex | `~/.codex/hooks.json` | ✅ (permissions and async questions) | ✅ | ❌ no such event | Trust the hooks once via `/hooks`. [adapter docs](src/adapters/codex/README.md) |
 | Grok | `~/.grok/hooks/agentwatch.json` (its own file) | ⚠️ only messages asking for a decision | ✅ | ✅ | [adapter docs](src/adapters/grok/README.md) |
-| OpenCode | `~/.config/opencode/plugins/agentwatch.js` (its own plugin) | ✅ (permissions and questions) | ✅ | ✅ | Restart OpenCode after installing. Works with any model provider. [adapter docs](src/adapters/opencode/README.md) |
+| OpenCode | `~/.config/opencode/plugins/agentwatch.js` (its own plugin) | ✅ (permissions and questions) | ✅ | ✅ | OpenCode 1.x and 2.x, one plugin for both. Restart OpenCode after installing. Works with any model provider. [adapter docs](src/adapters/opencode/README.md) |
 
 Hooks are set per user, not per app, so sessions are picked up from the CLI in any terminal and from the VS Code
 extensions too.
@@ -204,7 +204,9 @@ the session switches to "working · Running approved command", usually within a 
 - Codex and Grok don't expose their process id to hooks, so after you approve a command there, the session stays at
   "needs input" until the command finishes. The same goes for Claude Code permission prompts that don't run a shell (e.g.
   file edits), but those finish almost instantly. OpenCode reports approvals itself, so it isn't affected.
-- OpenCode sends no event when you quit it. Its sessions disappear within a minute of the OpenCode process exiting.
+- OpenCode sends no event when you quit it. OpenCode 1.x sessions disappear within a minute of the OpenCode process
+  exiting. OpenCode 2.x keeps running in a background service after you quit, so its finished sessions stay until
+  they expire, an hour after their last activity.
 
 ## Development
 

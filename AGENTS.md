@@ -152,10 +152,12 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.
-- OpenCode: payloads verified by capture (OpenCode 1.19.3 TUI). Hooks in via a generated plugin
-  (`~/.config/opencode/plugins/agentwatch.js`, on Windows too) that forwards cut-down events to `hook`; OpenCode must
-  be restarted to load it. No event on quit: sessions go when the OpenCode pid exits. Errors, retries, Esc and
-  subagent sessions follow the SDK types but weren't captured. OpenCode's `dev` branch is rewriting the plugin API.
+- OpenCode: payloads verified by capture (1.19.3 and 2.2.6 TUI). Hooks in via one generated plugin
+  (`~/.config/opencode/plugins/agentwatch.js`, on Windows too) whose default export serves both plugin APIs
+  (`server` for 1.x, `setup` + `ctx.event.subscribe` for 2.x) and forwards cut-down events to `hook`, tagged `v: 1|2`.
+  1.x must be restarted to load it. No event on quit: sessions go when the plugin's pid exits, but 2.x runs plugins
+  in a background service that outlives the TUI, so 2.x sessions expire instead. 2.2.6 ends a turn after a rejected
+  permission with `execution.interrupted` reason `shutdown`. Errors, retries, Esc and subagents weren't captured.
 - Grok also runs hooks from Claude Code's settings.json. The Claude Code adapter ignores calls that have `GROK_*` env vars.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach the local server.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks and are out of scope.

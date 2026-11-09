@@ -6,5 +6,5 @@ export const openCodeMeta: AdapterMeta = {
   color: "#0ea5e9",
   sound: "mail",
   docsUrl: "https://opencode.ai/docs/plugins/",
-  afterInstall: ["Restart OpenCode: it loads plugins only when it starts."],
+  afterInstall: ["Restart OpenCode so it loads the plugin (OpenCode 1.x loads plugins only when it starts)."],
 };

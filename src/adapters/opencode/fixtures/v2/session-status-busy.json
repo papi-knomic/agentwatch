@@ -1,0 +1,13 @@
+{
+  "id": "evt_constructedsessionstatu",
+  "type": "session.status",
+  "data": {
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "status": {
+      "type": "busy"
+    }
+  },
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  }
+}

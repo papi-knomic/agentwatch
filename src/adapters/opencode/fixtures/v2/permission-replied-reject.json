@@ -1,0 +1,13 @@
+{
+  "id": "evt_1bfac7ad3001spmw5vynxYgarX",
+  "created": 1794217114323,
+  "type": "permission.replied",
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  },
+  "data": {
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "requestID": "per_1bfac4c4e0016J6kBAabJGOyKl",
+    "reply": "reject"
+  }
+}

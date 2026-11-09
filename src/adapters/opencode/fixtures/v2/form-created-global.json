@@ -1,0 +1,21 @@
+{
+  "id": "evt_constructedformcreatedg",
+  "type": "form.created",
+  "data": {
+    "form": {
+      "id": "frm_constructed0002",
+      "sessionID": "global",
+      "title": "MCP login",
+      "fields": [
+        {
+          "type": "string",
+          "key": "token",
+          "title": "Token"
+        }
+      ]
+    }
+  },
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  }
+}

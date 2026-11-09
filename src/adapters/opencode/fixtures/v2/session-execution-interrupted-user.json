@@ -1,0 +1,11 @@
+{
+  "id": "evt_constructedsessionexecu",
+  "type": "session.execution.interrupted",
+  "data": {
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "reason": "user"
+  },
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  }
+}
