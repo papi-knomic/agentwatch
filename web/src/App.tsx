@@ -16,12 +16,16 @@ import {
   statusDuration,
   statusSince,
 } from "./board";
+import { DecisionPanel } from "./DecisionPanel";
+import { NotPaired, PairPage } from "./PairPage";
+import { type Me, pairCodeFromHash, useMe, useUnpairedWatch } from "./remote";
 import { SetupPanel } from "./SetupPanel";
 import { useSetup } from "./setup";
 import {
   type Connection,
   dismissSession,
   openSession,
+  type PendingDecision,
   type Session,
   type ToolInfo,
   useAgentStream,
@@ -86,9 +90,23 @@ function useStoredString(key: string): [string | null, (value: string | null) =>
   return [value, update];
 }
 
+/** Decides what to show: the dashboard, the pairing form (phone, after scanning the QR code) or "not paired". */
 export function App() {
-  const { sessions, tools, connection } = useAgentStream();
-  const { setup, replace: replaceSetup } = useSetup();
+  const { state, reload, markUnpaired } = useMe();
+  const code = pairCodeFromHash();
+  if (state.kind === "loading") return null;
+  const remoteSide = state.kind === "unpaired" || (state.kind === "ready" && state.me.remote);
+  if (code && remoteSide) return <PairPage code={code} onPaired={reload} />;
+  if (state.kind === "unpaired") return <NotPaired />;
+  return <Dashboard me={state.kind === "ready" ? state.me : { remote: false }} onUnpaired={markUnpaired} />;
+}
+
+function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
+  const { sessions, tools, connection, decisions } = useAgentStream();
+  // A paired phone can't see or change setup (the server refuses it); it also can't open apps on the PC.
+  const remote = me.remote;
+  const { setup, replace: replaceSetup } = useSetup(!remote);
+  useUnpairedWatch(remote && connection === "reconnecting", onUnpaired);
   // Older servers have no setup endpoint; the plain empty state covers that.
   const readySetup = setup !== null && setup !== "unavailable" ? setup : null;
   const [hideFinished, setHideFinished] = useStoredFlag("hide-finished", false);
@@ -120,7 +138,13 @@ export function App() {
     if (connection === "live" && storedAgent !== null && agent === null) setAgent(null);
   }, [connection, storedAgent, agent, setAgent]);
 
-  const rowProps = { toolById, showTool, now };
+  const decisionsBySession = useMemo(() => {
+    const map = new Map<string, PendingDecision[]>();
+    for (const d of decisions) map.set(d.sessionKey, [...(map.get(d.sessionKey) ?? []), d]);
+    return map;
+  }, [decisions]);
+  const canAnswer = !me.remote || me.device.allowApprovals;
+  const rowProps = { toolById, showTool, now, decisionsBySession, remote, canAnswer };
 
   return (
     <div className="app">
@@ -292,6 +316,12 @@ interface RowContext {
   toolById: Map<string, ToolInfo>;
   showTool: boolean;
   now: number;
+  /** Pending permission prompts and questions the dashboard can answer, by session key. */
+  decisionsBySession: Map<string, PendingDecision[]>;
+  /** Viewed from a paired phone: no actions that open apps on the PC. */
+  remote: boolean;
+  /** This viewer may approve prompts and answer questions. */
+  canAnswer: boolean;
 }
 
 /** Collapsed project folders, remembered per browser by project key. */
@@ -441,6 +471,9 @@ function SessionRow({
   showTool,
   showProject,
   now,
+  decisionsBySession,
+  remote,
+  canAnswer,
 }: { session: Session; showProject: boolean } & RowContext) {
   const tool = toolById.get(session.tool);
   const project = projectName(session.cwd);
@@ -449,7 +482,13 @@ function SessionRow({
   const detail = detailFor(session);
   const stalled = isStalled(session);
   const openTarget =
-    session.host === "Codex Desktop" ? "Codex" : session.host?.startsWith("VS Code") ? "VS Code" : undefined;
+    session.host === "Codex Desktop"
+      ? "Codex"
+      : session.host === "Claude Desktop"
+        ? "Claude"
+        : session.host?.startsWith("VS Code")
+          ? "VS Code"
+          : undefined;
 
   return (
     <li
@@ -496,7 +535,7 @@ function SessionRow({
         )}
       </div>
       <div className="row-actions">
-        {openTarget && <OpenButton sessionKey={session.key} target={openTarget} />}
+        {openTarget && !remote && <OpenButton sessionKey={session.key} target={openTarget} />}
         <button
           type="button"
           className="icon-button dismiss"
@@ -509,6 +548,9 @@ function SessionRow({
           </svg>
         </button>
       </div>
+      {decisionsBySession.get(session.key)?.map((decision) => (
+        <DecisionPanel key={decision.id} decision={decision} canAnswer={canAnswer} />
+      ))}
     </li>
   );
 }

@@ -1116,3 +1116,345 @@ button {
     animation: none;
   }
 }
+
+/* Answering a permission prompt or question from the dashboard (opt-in) */
+
+.decision {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, var(--border));
+  border-radius: 10px;
+  background: var(--attention-tint);
+}
+
+.decision-title {
+  margin: 0;
+  font-size: 13px;
+}
+
+.decision-preview {
+  max-height: 220px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font: 12px / 1.45 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.decision-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.deny-button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.deny-button:hover:not(:disabled) {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.decision button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.decision-question {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.decision-question legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.decision-header {
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.decision-option.on {
+  border-color: var(--text);
+}
+
+.decision-option small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.decision-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.decision-warn {
+  color: var(--warn);
+}
+
+.setup-remote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.setup-remote .setup-detail {
+  grid-column: 1 / -1;
+}
+
+.phone-settings .phone-field {
+  display: block;
+  margin: 0.5rem 0;
+}
+
+.phone-settings .phone-field input[type="url"],
+.phone-settings .phone-field input[type="password"] {
+  width: min(28rem, 100%);
+}
+
+/* Phone access: settings on the PC, and the pairing screens on the phone */
+
+.remote-access .phone-field input[type="text"] {
+  width: min(28rem, 100%);
+}
+
+.remote-warn {
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  background: var(--warn-tint);
+  color: var(--warn);
+}
+
+.remote-subhead {
+  margin: 14px 0 6px;
+  font-size: 13px;
+}
+
+.remote-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pair-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.qr {
+  width: 220px;
+  height: 220px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+
+.pair-url code {
+  word-break: break-all;
+}
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.device-name {
+  width: 12rem;
+  max-width: 100%;
+}
+
+.device-seen {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.device-approve {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.remote-screen {
+  display: grid;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  place-items: center;
+}
+
+.remote-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(26rem, 100%);
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.remote-card h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.remote-card p {
+  margin: 0;
+}
+
+.remote-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.remote-field input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* 16px stops iOS zooming into the field */
+}
+
+.remote-error {
+  color: var(--error);
+}
+
+.remote-big {
+  min-height: 44px;
+}
+
+/* Touch screens: every control is at least 44px tall. */
+@media (pointer: coarse), (max-width: 720px) {
+  .decision-buttons {
+    flex-direction: column;
+  }
+
+  .decision-buttons button,
+  .open-button,
+  .toggle,
+  .agent-chip,
+  .setup-remote .primary-button {
+    min-height: 44px;
+  }
+
+  .decision-buttons button {
+    width: 100%;
+    font-size: 15px;
+  }
+
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .decision-option {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .device-row button,
+  .device-row input[type="text"] {
+    min-height: 44px;
+  }
+
+  .device-approve {
+    min-height: 44px;
+  }
+
+  .device-approve input {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+.decision-plan {
+  max-height: 360px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.decision-feedback {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--muted, inherit);
+}
+
+.decision-feedback textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+}

@@ -3,9 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InstallOptions } from "../types.js";
-import { CLAUDE_HOOK_EVENTS, claudeSettingsPath, installClaudeCode, uninstallClaudeCode } from "./install.js";
+import {
+  CLAUDE_DECIDE_HOOKS,
+  CLAUDE_HOOK_EVENTS,
+  claudeSettingsPath,
+  installClaudeCode,
+  uninstallClaudeCode,
+} from "./install.js";
 
 const HOOK = 'node "C:/tools/agentwatch/dist/cli/index.js" hook --tool claude-code';
+
+const DECIDE = 'node "C:/tools/agentwatch/dist/cli/index.js" decide --tool claude-code';
 
 const EXISTING = {
   model: "opus",
@@ -138,5 +146,82 @@ describe("uninstallClaudeCode", () => {
   it("does nothing when settings.json does not exist", async () => {
     const result = await uninstallClaudeCode(options);
     expect(result.changed).toBe(false);
+  });
+});
+
+describe("remote actions (decide hooks)", () => {
+  function options0(): InstallOptions {
+    return { homeDir: home, hookCommand: HOOK, decideCommand: DECIDE, dryRun: false, env: {} };
+  }
+
+  it("does not add them unless asked", async () => {
+    await installClaudeCode({ ...options0() });
+    const settings = await readSettings();
+    expect(settings.hooks.PermissionRequest).toBeUndefined();
+    expect(settings.hooks.PreToolUse).toBeUndefined();
+  });
+
+  it("adds PermissionRequest and PreToolUse entries next to the user's own, with a timeout", async () => {
+    await writeSettings(EXISTING);
+    const result = await installClaudeCode({ ...options0(), remoteActions: true });
+    expect(result.summary).toContain("add PermissionRequest hook (*)");
+    expect(result.summary).toContain("add PreToolUse hook (AskUserQuestion)");
+    const settings = await readSettings();
+    expect(Object.keys(CLAUDE_DECIDE_HOOKS)).toEqual(["PermissionRequest", "PreToolUse"]);
+    expect(settings.hooks.PermissionRequest).toEqual([
+      { matcher: "*", hooks: [{ type: "command", command: DECIDE, timeout: 120 }] },
+    ]);
+    expect(settings.hooks.PreToolUse[0]).toEqual(EXISTING.hooks.PreToolUse[0]);
+    expect(settings.hooks.PreToolUse[1]).toEqual({
+      matcher: "AskUserQuestion",
+      hooks: [{ type: "command", command: DECIDE, timeout: 120 }],
+    });
+    // The decide hook waits for an answer, so it must not be async.
+    expect(JSON.stringify(settings.hooks.PermissionRequest)).not.toContain("async");
+  });
+
+  it("is idempotent, and a dry run writes nothing", async () => {
+    await writeSettings(EXISTING);
+    const dry = await installClaudeCode({ ...options0(), remoteActions: true, dryRun: true });
+    expect(dry.changed).toBe(true);
+    expect(await readSettings()).toEqual(EXISTING);
+
+    await installClaudeCode({ ...options0(), remoteActions: true });
+    const before = await readFile(settingsPath, "utf8");
+    const filesBefore = await readdir(join(home, ".claude"));
+    const second = await installClaudeCode({ ...options0(), remoteActions: true });
+    expect(second.changed).toBe(false);
+    expect(await readFile(settingsPath, "utf8")).toBe(before);
+    expect(await readdir(join(home, ".claude"))).toEqual(filesBefore);
+  });
+
+  it("a plain install afterwards leaves them alone; remoteActions: false removes only them", async () => {
+    await writeSettings(EXISTING);
+    await installClaudeCode({ ...options0(), remoteActions: true });
+    const withBoth = await readFile(settingsPath, "utf8");
+    expect((await installClaudeCode(options0())).changed).toBe(false);
+    expect(await readFile(settingsPath, "utf8")).toBe(withBoth);
+
+    const off = await installClaudeCode({ ...options0(), remoteActions: false });
+    expect(off.changed).toBe(true);
+    const settings = await readSettings();
+    expect(settings.hooks.PermissionRequest).toBeUndefined();
+    expect(settings.hooks.PreToolUse).toEqual(EXISTING.hooks.PreToolUse);
+    expect(settings.hooks.Stop).toHaveLength(2);
+    expect(JSON.stringify(settings)).not.toContain("decide --tool");
+  });
+
+  it("uninstall removes exactly what install added, decide hooks included", async () => {
+    await writeSettings(EXISTING);
+    await installClaudeCode({ ...options0(), remoteActions: true });
+    const result = await uninstallClaudeCode(options0());
+    expect(result.changed).toBe(true);
+    expect(await readSettings()).toEqual(EXISTING);
+  });
+
+  it("refuses to enable without a command to run", async () => {
+    await expect(
+      installClaudeCode({ homeDir: home, hookCommand: HOOK, dryRun: false, env: {}, remoteActions: true }),
+    ).rejects.toThrow(/decideCommand/);
   });
 });

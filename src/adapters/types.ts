@@ -10,6 +10,8 @@ export interface AdapterMeta {
   docsUrl: string;
   /** Steps the user must take in the tool itself after installing, e.g. trusting new hooks. */
   afterInstall?: string[];
+  /** The tool can have its permission prompts and questions answered from the dashboard (opt-in `decide` hooks). */
+  remoteActions?: boolean;
 }
 
 export interface NormalizeContext {
@@ -24,6 +26,13 @@ export interface InstallOptions {
   hookCommand: string;
   dryRun: boolean;
   env: NodeJS.ProcessEnv;
+  /** `decide` hook command (see `hookCommand`), for tools with `meta.remoteActions`. */
+  decideCommand?: string;
+  /**
+   * true: also install the opt-in `decide` hooks. false: remove them. Left out: don't touch them (an install
+   * without the flag must not undo what an earlier one added).
+   */
+  remoteActions?: boolean;
 }
 
 export interface InstallResult {
@@ -52,4 +61,9 @@ export interface Adapter {
 /** Identifies hook entries this project added, independent of where the CLI lives on disk. */
 export function isOurHookCommand(command: unknown, toolId: string): boolean {
   return typeof command === "string" && new RegExp(`\\bhook --tool ${toolId}(\\s|$)`).test(command);
+}
+
+/** Identifies the opt-in `decide` hook entries (answering prompts from the dashboard). */
+export function isOurDecideCommand(command: unknown, toolId: string): boolean {
+  return typeof command === "string" && new RegExp(`\\bdecide --tool ${toolId}(\\s|$)`).test(command);
 }

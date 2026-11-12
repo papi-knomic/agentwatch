@@ -5,9 +5,12 @@ import { parseArgs } from "node:util";
 import { adapters, getAdapter, toolDefaults } from "../adapters/index.js";
 import { ensureConfig } from "../core/config.js";
 import { APP_DISPLAY_NAME, APP_NAME } from "../core/constants.js";
+import { defaultPhoneConfig } from "../core/phone.js";
 import { NOTIFIABLE_STATUSES, type NotifiableStatus, type Session } from "../core/types.js";
 import { createNotifier } from "../notify/index.js";
+import { createPhoneNotifier } from "../notify/ntfy.js";
 import { buildNotification } from "../server/notifications.js";
+import { defaultDecideDeps, runDecide } from "./decide.js";
 import { runHook } from "./hook.js";
 import { installCommand, setupCommand } from "./install.js";
 import { statusCommand, stopServer } from "./service.js";
@@ -30,7 +33,8 @@ function version(): string {
 const HELP = `${APP_DISPLAY_NAME}: one dashboard and desktop notifications for your AI coding agents.
 
 Get started:
-  ${APP_NAME} setup [--no-autostart]       Connect every agent, start at login, start the dashboard
+  ${APP_NAME} setup [--no-autostart] [--remote-actions]
+                                         Connect every agent, start at login, start the dashboard
 
 Everyday:
   ${APP_NAME} status                       What's running and which agents are connected
@@ -40,12 +44,14 @@ Everyday:
 
 Fine-grained:
   ${APP_NAME} install --tool <id|all>      Add hooks to a tool's config (backs it up first)
-        [--dry-run] [--home <dir>]
+        [--dry-run] [--home <dir>]         --remote-actions / --no-remote-actions: opt in or out of
+                                         answering Claude Code prompts from the dashboard
   ${APP_NAME} uninstall --tool <id|all>    Remove exactly what install added; "all" also removes
         [--dry-run] [--home <dir>]         start-at-login and the notification registration
-  ${APP_NAME} notify-test [--tool <id>] [--status needs_input|done|error]
-                                         Show a sample notification
+  ${APP_NAME} notify-test [--tool <id>] [--status needs_input|done|error] [--phone]
+                                         Show a sample notification (--phone: send a test push to your phone instead)
   ${APP_NAME} hook --tool <id> [payload]   Called by agents; not for direct use
+  ${APP_NAME} decide --tool <id>           Called by the opt-in remote-action hooks; not for direct use
 
 Tools: ${adapters.map((a) => a.meta.id).join(", ")}`;
 
@@ -71,6 +77,27 @@ async function notifyTest(toolId: string, status: NotifiableStatus): Promise<voi
   console.log(`Sent: "${notification.title}": ${notification.body}`);
 }
 
+async function phoneTest(): Promise<void> {
+  const config = await ensureConfig(toolDefaults());
+  const phone = config.phone ?? defaultPhoneConfig();
+  if (!phone.topic)
+    throw new Error("Phone notifications aren't set up. Turn them on in the dashboard first.");
+  const result = await createPhoneNotifier({
+    getPhone: () => phone,
+    getRemote: () => config.remote,
+    log: () => undefined,
+  }).sendTest();
+  if (!result.ok) throw new Error(result.error ?? "Could not send the test push.");
+  console.log(`Sent a test push to your ntfy topic on ${phone.server}.`);
+}
+
+function remoteActionsFlag(values: { "remote-actions"?: boolean; "no-remote-actions"?: boolean }) {
+  if (values["remote-actions"] && values["no-remote-actions"]) {
+    throw new Error("Use either --remote-actions or --no-remote-actions, not both.");
+  }
+  return values["remote-actions"] ? true : values["no-remote-actions"] ? false : undefined;
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
 
@@ -81,6 +108,13 @@ async function main(): Promise<void> {
       const payload = rest.filter((_, i) => i !== toolIndex && i !== toolIndex + 1)[0];
       await runHook(rest[toolIndex + 1], payload);
     }
+    process.exit(0);
+  }
+
+  // Opt-in and separate from `hook`: it may print a decision and wait for the dashboard. Still never throws or fails.
+  if (command === "decide") {
+    const toolIndex = rest.indexOf("--tool");
+    if (toolIndex >= 0) await runDecide(rest[toolIndex + 1], defaultDecideDeps());
     process.exit(0);
   }
 
@@ -95,6 +129,9 @@ async function main(): Promise<void> {
       background: { type: "boolean", default: false },
       "no-autostart": { type: "boolean", default: false },
       "no-open": { type: "boolean", default: false },
+      "remote-actions": { type: "boolean", default: false },
+      "no-remote-actions": { type: "boolean", default: false },
+      phone: { type: "boolean", default: false },
     },
     allowPositionals: false,
   });
@@ -105,6 +142,7 @@ async function main(): Promise<void> {
         cliPath,
         autostart: !values["no-autostart"],
         open: !values["no-open"],
+        remoteActions: remoteActionsFlag(values),
       });
     case "start":
       return start({
@@ -129,6 +167,7 @@ async function main(): Promise<void> {
         dryRun: values["dry-run"] ?? false,
         home: values.home,
         cliPath,
+        remoteActions: remoteActionsFlag(values),
       });
     case "notify-test": {
       const tool = values.tool ?? "claude-code";
@@ -136,6 +175,7 @@ async function main(): Promise<void> {
       const status = (values.status ?? "needs_input") as NotifiableStatus;
       if (!NOTIFIABLE_STATUSES.includes(status))
         throw new Error(`--status must be one of ${NOTIFIABLE_STATUSES}`);
+      if (values.phone) return phoneTest();
       return notifyTest(tool, status);
     }
     case "--version":

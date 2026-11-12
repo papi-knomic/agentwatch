@@ -39,13 +39,18 @@ src/
   adapters/    one folder per AI tool: meta.ts, normalize.ts, install.ts, fixtures/, README.md
     shared/    helpers that several adapters use (JSON config editing, Claude-style hooks, terminal detection)
   server/      HTTP + SSE endpoints, auth, notification decisions
-  notify/      windows.ts, macos.ts, linux.ts (one module per OS)
-  cli/         start | hook | install | uninstall | notify-test
+  notify/      windows.ts, macos.ts, linux.ts (one module per OS); ntfy.ts (opt-in phone push)
+  cli/         start | hook | decide | install | uninstall | notify-test
 web/           Vite + React dashboard (built into dist/web and served by the server)
 ```
 
 Endpoints: `GET /api/health`, `GET /api/state`, `GET /api/stream` (SSE: `snapshot`, `upsert`, `remove`),
 `POST /api/events` (needs the token), `POST /api/sessions/dismiss` (dashboard's own origin or the token).
+Opt-in remote mode (phone via Tailscale Serve, `config.remote`) adds `GET /api/me`, `POST /api/pair` (remote hosts only),
+`POST /api/devices/pair-code`, `GET /api/devices`, `POST|DELETE /api/devices/:id`, `GET|POST /api/setup/remote` and
+`POST /api/setup/remote/detect` (loopback dashboard only). Code: `src/server/devices.ts`, `src/server/tailscale.ts`.
+Opt-in remote actions add `POST /api/decisions` and `GET /api/decisions/:id/wait` (token), `POST /api/decisions/:id/resolve`
+and `POST /api/setup/remote-actions` (dashboard's own origin only); see Known limitations.
 
 ### Shared event format (the contract between adapters and core)
 
@@ -73,17 +78,39 @@ same change.
 
 1. **Never break or slow down the agent.** The `hook` command must:
    - always exit with code `0`. (In Claude Code, exit code `2` from a `Stop` hook makes Claude *keep going*.)
+   - Explicit, opt-in exception: `agentwatch decide --tool <id>` (the `remoteActions` feature, installed only with
+     `--remote-actions`). It exists to answer a permission prompt or question from the dashboard, so it may print one
+     JSON line to stdout and may wait up to ~100s, but only while a visible dashboard tab is open and the user enabled it. It
+     still exits `0`, never throws, and prints nothing otherwise. `hook` itself is unchanged.
    - print nothing to stdout. Some tools read hook stdout as instructions.
    - finish within ~1s, even if the server is down (short request timeout, failures ignored).
    - be safe to run when the server isn't running at all.
-2. **Local only.** The server listens on `127.0.0.1` only. No telemetry, no analytics, no requests to the internet,
-   no auto-update calls.
+2. **Local only.** The server listens on `127.0.0.1` only (remote mode doesn't change that). No telemetry or analytics. The only
+   outbound requests are to a notification server the user explicitly configured (phone notifications, off by default).
+   No auto-update calls. The only remote access is through a user-run HTTPS proxy such as
+   Tailscale Serve, forwarding to `127.0.0.1`, for the hosts listed in `config.remote.hosts`. Never document or support
+   Tailscale Funnel or any public exposure. The only process we spawn for it is the local `tailscale status --json`.
 3. **Treat localhost as unsafe.** Any website open in the user's browser can send requests to localhost. Require the token stored in
    the user config on every write request, check the `Host` header (blocks DNS rebinding), and check `Origin`
-   on browser requests.
+   on browser requests (including reads of `/api/*` other than `/api/health`). Limit: an `Origin` check keeps other
+   web pages out (browsers can't forge it) but is not authentication; any local process can send the header. Don't
+   describe it as stronger. Remote actions must not be enabled on shared multi-user machines until the planned
+   dashboard login exists. Remote requests (Host is a configured remote host) are stricter: every `/api/*` request
+   except `/api/health` and `/api/pair` needs a valid paired-device cookie (hashed in `devices.json`, compared with
+   `timingSafeEqual`; cookie name `__Host-aw_device`, so it cannot be planted from a sibling service on the same ts.net name), writes also need `Origin` = `https://<that host>`, the token is never accepted from them (a phone
+   never gets it), approving prompts needs the per-device "Allow approvals" opt-in, and setup, device management,
+   open-session and shutdown are loopback only. Don't trust `Tailscale-User-*` headers (a local process can forge them).
 4. **Privacy.** Store only what the shared event format holds. Never save prompts, transcripts, file contents or
    environment variables. The one exception is `title`: at most the first line of a prompt, cut to 80 characters,
    so users can tell sessions apart. The hook drops it when the user sets `taskTitles: false`.
+   Second exception, only with `remoteActions` on: while a permission prompt or question is pending, its preview
+   (Bash command or file path ≤300 chars, plan ≤4000 chars of Markdown, question and option text) is held in server memory for
+   display and dropped when answered, cancelled or expired. The feedback typed when rejecting a plan (≤1000 chars) is
+   passed on to Claude and not kept. It is never written to the session file or logs.
+   Third, only with `phone.enabled`: a phone notification (ntfy) is generic by default (tool name plus "Needs your
+   input" / "Finished" / "Error"). Only with the user's `phone.includeDetails` may it add the project folder's base name,
+   the task title and the agent's short message. Never full paths, prompts, transcripts or command previews. The topic
+   and access token are secrets: never logged, never sent back to the browser.
 5. **Don't damage the user's config.** Installers that edit `~/.claude/settings.json`, `~/.codex/config.toml`,
    `~/.grok/hooks/`, etc. must: add to what's there and never overwrite it, back it up first, be safe to run twice, support `--dry-run`,
    and have an `uninstall` that removes exactly what was added.
@@ -158,9 +185,35 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   1.x must be restarted to load it. No event on quit: sessions go when the plugin's pid exits, but 2.x runs plugins
   in a background service that outlives the TUI, so 2.x sessions expire instead. 2.2.6 ends a turn after a rejected
   permission with `execution.interrupted` reason `shutdown`. Errors, retries, Esc and subagents weren't captured.
+- Remote actions (answer from the dashboard; Claude Code only, opt-in): `PermissionRequest` and `PreToolUse`
+  (`AskUserQuestion`) hooks run `agentwatch decide`, which registers a pending decision with the server
+  (`POST /api/decisions`, token), long-polls it (`GET /api/decisions/:id/wait`, token) and prints the documented hook
+  JSON. Resolving (`POST /api/decisions/:id/resolve`) needs the dashboard's `Origin` header, not the token: that blocks
+  web pages but not local processes, which can send any `Origin` (see hard rule 3). Pending
+  decisions go to the dashboard as SSE `decision` / `decision-remove` events (and `decisions` in `snapshot` and
+  `/api/state`); they are not part of `Session` and never persisted. They are cancelled by a newer non-`needs_input`
+  event for the session (event time more than 1.5s after the request was created; fail-safe, it can also cancel on
+  unrelated later activity), session end, expiry (100s, below `decide`'s 110s deadline), no `wait` request attached
+  for 3s, or no visible dashboard tab for 5s. Presence: each tab sends a random client id on `/api/stream?client=` and
+  `POST /api/presence {clientId, visible}` (on connect, on visibility change, every 20s while visible; a report goes
+  stale after 60s); only a connected and visible tab lets a decision be registered. The hook runs before Claude Code's
+  own question UI, so while a visible tab is open the AskUserQuestion prompt waits for the dashboard (not shown in the
+  terminal) for up to ~100s or until the tab is hidden/closed; `PermissionRequest` may do the same (unverified). An
+  answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
+  unverified); questions whose multi-select labels contain a comma are not offered. Payload
+  fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not
+  captures. Grok hooks can only deny, so Grok is unsupported; Codex `PermissionRequest` has the same format and
+  OpenCode has an HTTP permission API (future work). Hooks can't send new prompts or start plans; only Claude Code
+  Channels (a research preview) could, and that is out of scope.
+- Remote mode: whether Tailscale Serve forwards `Host` as `<machine>.<tailnet>.ts.net` and the exact `tailscale serve` flags are
+  unverified (covered only by simulated-proxy tests). The loopback `Origin` check is still forgeable by local processes. A phone without
+  "Allow approvals" doesn't count as a viewer, so it doesn't hold prompts back from the terminal. Failed pairing attempts
+  are rate-limited globally (10 per minute; successes don't count, and a new code from the PC dashboard resets it), so a
+  flood can briefly block pairing, never authenticate.
 - Grok also runs hooks from Claude Code's settings.json. The Claude Code adapter ignores calls that have `GROK_*` env vars.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach the local server.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks and are out of scope.
+- Claude Desktop sessions open via the undocumented `claude://code/continue?session=local_<id>` link; the `local_` id is looked up read-only in the app's session records (Windows MSIX path verified; macOS/Linux unverified). No match, no link.
 - Clicking a notification focuses the right VS Code window (`vscode://file/<cwd>`), but not the exact Claude tab: a toast
   can launch only one link. The dashboard's "Open in VS Code" goes to the exact Claude Code extension tab (via the
   server, see the claude-code adapter README). Focusing the exact terminal tab is not supported.

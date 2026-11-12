@@ -19,12 +19,24 @@ export interface ToolSetup {
   error?: string;
 }
 
+/** Answering permission prompts and questions from the dashboard: opt-in, for tools that support it. */
+export interface RemoteActionsState {
+  supported: boolean;
+  /** The config flag: the server accepts decisions. */
+  enabled: boolean;
+  /** The `decide` hooks are in the tool's config. Both must be true for it to work. */
+  installed: boolean;
+  /** Tools that have it, by display name. */
+  tools: string[];
+}
+
 export interface SetupState {
   cli: string;
   autostart: { supported: boolean; installed: boolean };
   /** Applies to every tool. */
   notes: string[];
   tools: ToolSetup[];
+  remoteActions: RemoteActionsState;
 }
 
 export interface ConnectResult {
@@ -39,6 +51,11 @@ export interface ConnectResult {
 export interface SetupService {
   status(): Promise<SetupState>;
   connect(tool: string, dryRun: boolean): Promise<{ results: ConnectResult[]; setup: SetupState }>;
+  /** Turns remote actions on (adds the `decide` hooks and the config flag) or off (removes both). */
+  setRemoteActions(
+    enabled: boolean,
+    dryRun: boolean,
+  ): Promise<{ results: ConnectResult[]; setup: SetupState }>;
 }
 
 export interface SetupDeps {
@@ -47,6 +64,9 @@ export interface SetupDeps {
   homeDir: string;
   env: NodeJS.ProcessEnv;
   hookCommandFor: (toolId: string) => string;
+  decideCommandFor?: (toolId: string) => string;
+  /** Persists the remote actions flag (and nothing else) after it is switched. */
+  saveRemoteActions?: (enabled: boolean) => Promise<void>;
   autostartInstalled?: () => Promise<boolean>;
   /** Extra one-time setup shared by all tools (e.g. the Windows notification identity). */
   afterConnect?: (dryRun: boolean) => Promise<void>;
@@ -64,7 +84,28 @@ export function createSetupService(deps: SetupDeps): SetupService {
     env: deps.env,
     dryRun,
     hookCommand: deps.hookCommandFor(adapter.meta.id),
+    ...(deps.decideCommandFor ? { decideCommand: deps.decideCommandFor(adapter.meta.id) } : {}),
   });
+  const remoteTools = () => deps.adapters.filter((a) => a.meta.remoteActions && deps.decideCommandFor);
+
+  async function remoteActionsState(): Promise<RemoteActionsState> {
+    const tools = remoteTools();
+    // Installed = adding the hooks would change nothing.
+    const previews = await Promise.all(
+      tools.map((a) =>
+        a
+          .install({ ...optionsFor(a, true), remoteActions: true })
+          .then((r) => !r.changed)
+          .catch(() => false),
+      ),
+    );
+    return {
+      supported: tools.length > 0 && deps.saveRemoteActions !== undefined,
+      enabled: deps.config.remoteActions === true,
+      installed: previews.length > 0 && previews.every(Boolean),
+      tools: tools.map((a) => a.meta.displayName),
+    };
+  }
 
   async function toolSetup(adapter: Adapter): Promise<ToolSetup> {
     const { meta } = adapter;
@@ -96,6 +137,7 @@ export function createSetupService(deps: SetupDeps): SetupService {
       autostart: { supported: autostart !== undefined, installed: autostart ? await autostart() : false },
       notes: GENERAL_NOTES,
       tools: await Promise.all(deps.adapters.map(toolSetup)),
+      remoteActions: await remoteActionsState(),
     };
   }
 
@@ -118,5 +160,29 @@ export function createSetupService(deps: SetupDeps): SetupService {
     return { results, setup: await status() };
   }
 
-  return { status, connect };
+  async function setRemoteActions(enabled: boolean, dryRun: boolean) {
+    const targets = remoteTools();
+    if (targets.length === 0 || !deps.saveRemoteActions)
+      throw new UnknownToolError("Remote actions aren't available");
+    const results: ConnectResult[] = [];
+    for (const adapter of targets) {
+      const result = await adapter.install({ ...optionsFor(adapter, dryRun), remoteActions: enabled });
+      results.push({
+        id: adapter.meta.id,
+        configPath: result.configPath,
+        changed: result.changed,
+        summary: result.summary,
+        ...(result.backupPath ? { backupPath: result.backupPath } : {}),
+        afterInstall: adapter.meta.afterInstall ?? [],
+      });
+    }
+    // Hooks first: if they can't be written, the flag must not claim the feature is on.
+    if (!dryRun) {
+      await deps.saveRemoteActions(enabled);
+      deps.config.remoteActions = enabled;
+    }
+    return { results, setup: await status() };
+  }
+
+  return { status, connect, setRemoteActions };
 }

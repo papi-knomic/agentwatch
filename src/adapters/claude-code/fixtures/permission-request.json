@@ -1,0 +1,12 @@
+{
+  "session_id": "sess-demo-1",
+  "transcript_path": "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+  "cwd": "C:\\Users\\dev\\projects\\demo",
+  "permission_mode": "default",
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm test",
+    "description": "Run the test suite"
+  }
+}

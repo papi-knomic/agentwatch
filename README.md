@@ -65,7 +65,9 @@ and lets you preview and connect it with a click. It also has the terminal comma
 | `agentwatch start --background` | Start the dashboard without a window (it also starts at login after `setup`) |
 | `agentwatch stop` | Stop it |
 | `agentwatch notify-test --status needs_input` | Show a sample notification |
+| `agentwatch notify-test --phone` | Send a test push to your phone (after turning on phone notifications) |
 | `agentwatch install --tool <claude-code\|codex\|grok\|opencode\|all> [--dry-run]` | Connect one tool |
+| `agentwatch install --tool claude-code --remote-actions` | Also let the dashboard answer Claude Code permission prompts and questions (opt-in, see below) |
 | `agentwatch uninstall --tool all` | Remove all hooks, start at login and the notification registration |
 
 ### Updating
@@ -123,6 +125,97 @@ On Windows, after `install`, notifications show under the app's own name and ico
 PowerShell. If none appear, check *Settings → System → Notifications*: allow notifications for AgentWatch (or Windows
 PowerShell before install) and turn off Do Not Disturb.
 
+### Answer prompts from the dashboard (Claude Code, opt-in)
+
+Off by default. When on, a Claude Code permission request (for example "allow this Bash command?") or a question from
+Claude shows up on its session card with **Approve** / **Deny** buttons or the question's options, so you can answer
+without switching windows.
+
+Turn it on from the dashboard (**Agents** > **Answer prompts from here** > **Turn on**, which shows exactly what it will
+add first) or from a terminal:
+
+```sh
+agentwatch install --tool claude-code --remote-actions     # or: agentwatch setup --remote-actions
+agentwatch install --tool claude-code --no-remote-actions  # turn it off again (uninstall turns it off too)
+```
+
+This adds two hooks to `~/.claude/settings.json` (backed up first, removed by `uninstall`): `PermissionRequest`
+(matcher `*`) and `PreToolUse` (matcher `AskUserQuestion`), both running `agentwatch decide --tool claude-code` with a
+120 second timeout, and sets `"remoteActions": true` in `~/.agentwatch/config.json`. Start a new Claude Code session
+afterwards.
+
+How it behaves:
+
+- It only waits while a dashboard tab is open **and visible** (each tab reports this; a hidden tab or a closed one does
+  not count). With no visible tab, the server down or the setting off, the hook exits silently at once and Claude Code
+  asks you as usual.
+- **While a visible tab is open, Claude Code's question waits for the dashboard: it is not shown in the terminal
+  meanwhile.** (The hook runs before Claude Code's own question UI.) That lasts until you answer, for up to about
+  100 seconds, or until you hide or close the tab (the question then appears in the terminal after a few seconds).
+  Permission prompts may behave the same way; that is not verified.
+- If the answer was given elsewhere (a session that moved on, for instance), the card clears.
+- If nobody answers within about 100 seconds, the hook gives up and Claude Code's own prompt appears.
+- Only a short gap is tolerated: if the waiting hook disappears, the card is withdrawn after a few seconds so you
+  are never offered an answer nobody will receive.
+- If a multi-select question has an option containing a comma, it is not offered here (several picks are returned
+  joined with commas, which would be ambiguous), and Claude Code asks you as usual.
+- Plans (`ExitPlanMode`) get their own card with the plan text (first 4000 characters, shown as plain text): "Approve plan"
+  or "Keep planning" with optional feedback (up to 1000 characters) that Claude receives as the reason. You can't send
+  new prompts or start plans from the dashboard (hooks can't do that). Which permission mode Claude continues in after
+  an approved plan is not chosen by AgentWatch; it is whatever Claude Code does for a hook-approved plan (not verified).
+- Not verified: whether Claude Code shows its own permission dialog while a `PermissionRequest` hook is waiting. Plan
+  for it not to. Close or hide the dashboard tab, or turn the setting off, if you would rather answer in the terminal.
+
+Security: the approve/deny endpoint checks that the request carries the dashboard's own `Origin`. That stops other web
+pages (browsers can't forge `Origin`) but it is not authentication: any local process can send that header, so any
+program on this computer that can reach `127.0.0.1` can approve a pending command or switch this setting. Programs
+running as you can run commands anyway, but on a shared multi-user machine other users could too, so **do not turn
+this on on a shared machine**. A dashboard login is planned together with phone access. The dashboard's state and
+live stream also refuse requests from other web pages. The command or file path shown on
+the card (up to 300 characters; plans up to 2000) is kept in memory only while the prompt is open and is never written
+to disk. Grok hooks can only deny, so Grok isn't supported; Codex uses the same hook format and OpenCode has an HTTP
+API for permissions, both possible later.
+
+### Phone notifications (ntfy, opt-in)
+
+Get a push on your phone when an agent needs you or finishes, even away from your computer. It uses
+[ntfy](https://ntfy.sh), a free push service, and is **off by default**.
+
+1. Install the ntfy app on your phone (Android, iOS).
+2. On this computer's dashboard, open *Agents → Phone notifications (ntfy)* and turn it on. A random topic is
+   generated for you. (The same switch lives in `config.json` under `phone`.)
+3. In the ntfy app, subscribe to that topic (use the same server if you changed it).
+4. Press **Send test**, or run `agentwatch notify-test --phone`.
+
+Phone pushes follow the same rules as desktop notifications: the master `notifications` switch, each tool's
+`enabled` and `notifyOn`. Turning the master switch off mutes both. Pushes are rate limited (one per session per 10
+seconds, 30 per minute overall).
+
+```jsonc
+"phone": {
+  "enabled": false,
+  "server": "https://ntfy.sh",   // https only (http is accepted for localhost)
+  "topic": "…",                  // generated, 16-64 chars of A-Z a-z 0-9 _ -
+  "token": "…",                  // optional access token for a protected server
+  "includeDetails": false
+}
+```
+
+**Privacy.** ntfy.sh is a third-party public service, and the topic is the only secret: anyone who knows it can read
+(and send) notifications on it. Keep it private and use *New topic* if it leaks. By default a push says only the
+agent's name and "Needs your input", "Finished" or "Error". *Include project and task names* adds the project folder
+name (never the full path), the task title and the agent's short message; those then pass through the ntfy server and
+your phone vendor's push service (Google or Apple). Prompts and transcripts are never sent. For more control, run your
+own ntfy server (over https) and, if it is protected, set an access token; the token is stored in `config.json`
+and is never shown again in the dashboard.
+
+If you also set up phone access to the dashboard (below), tapping a push opens the dashboard at your Tailscale
+address; otherwise pushes have no link, since `127.0.0.1` means nothing on a phone.
+
+ntfy publish API: <https://docs.ntfy.sh/publish/> (headers `Title`, `Priority`, `Tags`, `Click`, `Actions`;
+[access tokens](https://docs.ntfy.sh/publish/#authentication)). AgentWatch sends only a plain POST plus a `view`
+action, never `http` actions.
+
 ### Settings
 
 Edit `~/.agentwatch/config.json` (created on first start), then restart the dashboard (`agentwatch stop`, then
@@ -135,6 +228,9 @@ and `opencode`. Any setting you leave out keeps its default, so you only need to
   "token": "…",                 // generated; hooks use it to authenticate
   "notifications": true,        // master switch
   "taskTitles": true,           // show each session's name
+  "remoteActions": false,       // answer Claude Code prompts from the dashboard (see above)
+  "remote": { "enabled": false, "hosts": [] },  // phone access through Tailscale Serve (see below)
+  "phone": { "enabled": false },  // push notifications to your phone through ntfy (see above)
   "tools": {
     "claude-code": {
       "enabled": true,
@@ -149,6 +245,40 @@ and `opencode`. Any setting you leave out keeps its default, so you only need to
   }
 }
 ```
+
+## Use AgentWatch from your phone
+
+Off by default. You can watch your sessions (and, per phone, answer prompts) from your phone through
+[Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve), which shares the dashboard inside your own tailnet over
+HTTPS. AgentWatch itself still listens on 127.0.0.1 only; Tailscale Serve is a proxy you run, and nothing is
+exposed to the internet.
+
+1. Install Tailscale on the PC and the phone and sign in to the same tailnet. In the Tailscale admin console, enable
+   MagicDNS and HTTPS certificates ([docs](https://tailscale.com/kb/1153/enabling-https)).
+2. In the dashboard open **Agents** > **Phone (remote access)**, press **Detect** (or type your machine name, for example
+   `mybox.tail1234.ts.net`), and **Turn on**.
+3. In a terminal on the PC run `tailscale serve --bg <port>` (the dashboard shows the exact command with your port,
+   7878 by default). The flags differ between Tailscale versions: check `tailscale serve --help`.
+4. Press **Pair a phone** and scan the QR code with the phone's camera (Tailscale must be on there). Name the phone.
+   The code works once and expires after 2 minutes.
+5. The phone now shows the dashboard. To let it approve Claude Code prompts, tick **Allow approvals** for that phone in the
+   same list on the PC. Without it the phone can only watch and dismiss. **Revoke** removes a phone at once.
+
+Never use **Tailscale Funnel** for this: it publishes the dashboard on the public internet. AgentWatch only supports Serve.
+Remote requests need a device cookie from pairing (stored hashed in `~/.agentwatch/devices.json`); the token is never
+accepted from them, and setup, device management and "Open in …" only work on the PC itself. Anyone who can read the
+phone's browser cookies, or who you let into your tailnet and who gets a pairing code, can act as that phone, so keep
+"Allow approvals" off unless you need it.
+
+The device cookie is named `__Host-aw_device` (HttpOnly, Secure, SameSite=Strict, `Path=/`, no `Domain`), so browsers refuse
+to let another site or service plant or overwrite it. Cookies are not scoped by port, though: any other web service you
+serve on the same `<machine>.<tailnet>.ts.net` name (for example another `tailscale serve --https=8443` port) is sent
+that cookie by the phone's browser and could read it. Serve only AgentWatch on that hostname, or give the other
+service its own machine name. Turning remote access off, removing a host or revoking a phone closes that phone's open
+connections immediately.
+
+Not verified against a live tailnet: that Serve forwards the `Host` header as `<machine>.<tailnet>.ts.net` (AgentWatch
+refuses the request otherwise) and the exact `tailscale serve` syntax of your version.
 
 ## Troubleshooting
 
@@ -194,12 +324,18 @@ the session switches to "working · Running approved command", usually within a 
 
 ## Limitations
 
+- Phone access needs Tailscale Serve set up by you and has only been tested against a simulated proxy (see above).
+- Answering prompts from the dashboard is Claude Code only and opt-in. Whether Claude Code's own dialog stays visible
+  while the hook waits is unverified.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach your local dashboard.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks.
 - Notification clicks can open a VS Code window, but not a specific Claude tab or terminal tab. A notification can
   open only one link, so use the dashboard's **Open in VS Code** to get to the exact Claude tab.
 - Codex desktop chats open directly through `codex://threads/<thread-id>`. This requires Codex to be installed
   as the protocol handler and the session to be identified as running in the desktop app.
+- Claude desktop app sessions (host "Claude Desktop") open through the app's undocumented `claude://code/continue` link,
+  using the app's own session id found by reading its local session records (only the id is kept). If it can't be
+  found there is no link. Verified on Windows only; see the [adapter docs](src/adapters/claude-code/README.md).
 - macOS and Linux notifications and start at login are implemented but not yet tested on those systems. macOS notifications can't be clicked.
 - Codex and Grok don't expose their process id to hooks, so after you approve a command there, the session stays at
   "needs input" until the command finishes. The same goes for Claude Code permission prompts that don't run a shell (e.g.

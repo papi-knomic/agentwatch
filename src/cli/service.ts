@@ -3,13 +3,19 @@ import { mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, sep } from "node:path";
 import { adapters, toolDefaults } from "../adapters/index.js";
-import { type Config, ensureConfig, readConfig } from "../core/config.js";
+import {
+  type Config,
+  configFileExists,
+  ensureConfig,
+  readConfig,
+  setRemoteActionsFlag,
+} from "../core/config.js";
 import { APP_DISPLAY_NAME, APP_NAME, PACKAGE_NAME } from "../core/constants.js";
 import { configPath, serverLogPath } from "../core/paths.js";
 import { registerWindowsAppId } from "../notify/windows-identity.js";
 import { createSetupService, type SetupState } from "../server/setup.js";
 import { autostartFor } from "./autostart.js";
-import { buildHookCommand } from "./hook-command.js";
+import { buildDecideCommand, buildHookCommand } from "./hook-command.js";
 
 export const serverUrl = (config: Pick<Config, "port">) => `http://127.0.0.1:${config.port}`;
 
@@ -47,6 +53,13 @@ export function setupService(config: Config, cliPath: string) {
     homeDir: homedir(),
     env: process.env,
     hookCommandFor: (toolId) => buildHookCommand(cliPath, toolId),
+    decideCommandFor: (toolId) => buildDecideCommand(cliPath, toolId),
+    saveRemoteActions: async (enabled) => {
+      await setRemoteActionsFlag(enabled);
+      // false also means "already that value", so the missing file is checked separately.
+      if (!(await configFileExists()))
+        throw new Error("The config file is missing, so the setting could not be saved.");
+    },
     autostartInstalled: () => autostart(cliPath).isInstalled(),
     afterConnect: async (dryRun) => {
       if (process.platform === "win32") await registerWindowsAppId({ dryRun });
@@ -103,6 +116,12 @@ export function printSetup(setup: SetupState, url: string, running: boolean): vo
     `  Dashboard:  ${running ? url : "not running"}  (${APP_NAME} ${running ? "stop" : "start --background"})`,
   );
   console.log(`  Start at login: ${setup.autostart.installed ? "yes" : "no"}`);
+  if (setup.remoteActions.supported) {
+    const { enabled, installed } = setup.remoteActions;
+    console.log(
+      `  Answer prompts from the dashboard: ${enabled && installed ? "on" : enabled || installed ? "partly set up (run install --remote-actions)" : "off"}`,
+    );
+  }
   console.log(`  Config:     ${configPath()}`);
   console.log("");
   for (const tool of setup.tools) {

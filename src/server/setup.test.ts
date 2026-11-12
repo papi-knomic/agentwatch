@@ -74,4 +74,55 @@ describe("setup service", () => {
   it("rejects unknown tools", async () => {
     await expect(service().connect("nope", false)).rejects.toThrow(/Unknown tool/);
   });
+
+  describe("remote actions", () => {
+    function remoteService() {
+      const saved: boolean[] = [];
+      const config = { port: 1, token: "x".repeat(32), notifications: true, tools: toolDefaults() };
+      const setup = createSetupService({
+        adapters,
+        config,
+        homeDir: home,
+        env: {},
+        hookCommandFor: (id) => `node "/opt/aw/cli.js" hook --tool ${id}`,
+        decideCommandFor: (id) => `node "/opt/aw/cli.js" decide --tool ${id}`,
+        saveRemoteActions: async (enabled) => {
+          saved.push(enabled);
+        },
+      });
+      return { setup, saved, config };
+    }
+
+    it("writes the flag even when the in-memory config already agrees (the file may differ)", async () => {
+      const { setup, saved, config } = remoteService();
+      Object.assign(config, { remoteActions: true });
+      await setup.setRemoteActions(true, false);
+      expect(saved).toEqual([true]);
+    });
+
+    it("is unsupported without a way to save the config", async () => {
+      expect((await service().status()).remoteActions.supported).toBe(false);
+      await expect(service().setRemoteActions(true, false)).rejects.toThrow(/aren't available/);
+    });
+
+    it("previews, turns on, and turns off, saving the flag only for real runs", async () => {
+      const { setup, saved, config } = remoteService();
+      const initial = (await setup.status()).remoteActions;
+      expect(initial).toEqual({ supported: true, enabled: false, installed: false, tools: ["Claude Code"] });
+
+      const preview = await setup.setRemoteActions(true, true);
+      expect(preview.results[0]?.summary).toContain("add PermissionRequest hook (*)");
+      expect(preview.results[0]?.summary).toContain("add PreToolUse hook (AskUserQuestion)");
+      expect(saved).toEqual([]);
+      expect(config.remoteActions).toBeUndefined();
+
+      const on = await setup.setRemoteActions(true, false);
+      expect(on.setup.remoteActions).toMatchObject({ enabled: true, installed: true });
+      expect(saved).toEqual([true]);
+
+      const off = await setup.setRemoteActions(false, false);
+      expect(off.setup.remoteActions).toMatchObject({ enabled: false, installed: false });
+      expect(saved).toEqual([true, false]);
+    });
+  });
 });

@@ -15,18 +15,21 @@ let port: number;
 let opened: Session[];
 let connects: { tool: string; dryRun: boolean }[];
 let shutdowns: number;
+let remoteToggles: { enabled: boolean; dryRun: boolean }[];
 
 const fakeSetupState = {
   cli: "agentwatch",
   autostart: { supported: true, installed: false },
   notes: [],
   tools: [],
+  remoteActions: { supported: true, enabled: false, installed: false, tools: ["Claude Code"] },
 };
 
 beforeEach(async () => {
   store = new SessionStore();
   opened = [];
   connects = [];
+  remoteToggles = [];
   shutdowns = 0;
   server = createAppServer({
     config: {
@@ -49,6 +52,10 @@ beforeEach(async () => {
       connect: async (tool, dryRun) => {
         if (tool === "nope") throw new UnknownToolError(`Unknown tool "${tool}"`);
         connects.push({ tool, dryRun });
+        return { results: [], setup: fakeSetupState };
+      },
+      setRemoteActions: async (enabled, dryRun) => {
+        remoteToggles.push({ enabled, dryRun });
         return { results: [], setup: fakeSetupState };
       },
     },
@@ -217,6 +224,17 @@ describe("app server", () => {
     ]);
     const unknown = await send("POST", "/api/setup/connect", { headers: own, body: { tool: "nope" } });
     expect(unknown.status).toBe(400);
+  });
+
+  it("only lets the dashboard itself switch remote actions (it edits agent configs)", async () => {
+    const body = { enabled: true, dryRun: true };
+    expect((await send("POST", "/api/setup/remote-actions", { body })).status).toBe(403);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: auth, body })).status).toBe(403);
+    expect(remoteToggles).toEqual([]);
+    const own = { origin: `http://127.0.0.1:${port}` };
+    expect((await send("POST", "/api/setup/remote-actions", { headers: own, body: {} })).status).toBe(400);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: own, body })).status).toBe(200);
+    expect(remoteToggles).toEqual([{ enabled: true, dryRun: true }]);
   });
 
   it("only lets the CLI (token, no browser origin) shut the server down", async () => {

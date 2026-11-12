@@ -33,23 +33,27 @@ export function addClaudeStyleHooks(
   isOurs: IsOurs,
   path: string,
   summary: string[],
+  /** Tool-name matcher for events that have one (PreToolUse, PermissionRequest): a new group gets it. */
+  matcherFor: (event: string) => string | undefined = () => undefined,
 ): JsonObject {
   const hooks = hooksSection(settings, path);
   for (const event of events) {
     const handler = handlerFor(event);
+    const matcher = matcherFor(event);
+    const label = matcher === undefined ? `${event} hook` : `${event} hook (${matcher})`;
     const groups = matcherGroups(hooks, event, path);
     const ours = groups.flatMap(handlersOf).find((h) => isJsonObject(h) && isOurs(h.command));
     if (isJsonObject(ours)) {
       // Already installed; refresh it in place if the CLI moved or the handler options changed.
       if (JSON.stringify(ours) !== JSON.stringify({ ...ours, ...handler })) {
         Object.assign(ours, handler);
-        summary.push(`update ${event} hook`);
+        summary.push(`update ${label}`);
       }
       continue;
     }
-    groups.push({ hooks: [{ ...handler }] });
+    groups.push(matcher === undefined ? { hooks: [{ ...handler }] } : { matcher, hooks: [{ ...handler }] });
     hooks[event] = groups;
-    summary.push(`add ${event} hook`);
+    summary.push(`add ${label}`);
   }
   settings.hooks = hooks;
   return settings;

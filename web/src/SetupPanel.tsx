@@ -1,5 +1,7 @@
 import { type CSSProperties, useState } from "react";
-import { type ConnectResult, connectTool, type Setup, type SetupTool } from "./setup";
+import { PhoneNotifications } from "./PhoneSettings";
+import { RemoteAccess } from "./RemoteAccess";
+import { type ConnectResult, connectTool, type Setup, type SetupTool, setRemoteActions } from "./setup";
 
 const OPEN_KEY = "setup-panel-open";
 
@@ -59,6 +61,11 @@ export function SetupPanel(props: { setup: Setup; onSetup: (setup: Setup) => voi
               <ToolRow key={tool.id} tool={tool} onSetup={onSetup} />
             ))}
           </ul>
+          {setup.remoteActions.supported && (
+            <RemoteActionsRow remote={setup.remoteActions} onSetup={onSetup} />
+          )}
+          <PhoneNotifications />
+          <RemoteAccess />
           {setup.notes.length > 0 && (
             <ul className="setup-notes">
               {setup.notes.map((note) => (
@@ -199,6 +206,97 @@ function ToolRow({ tool, onSetup }: { tool: SetupTool; onSetup: (setup: Setup) =
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Opt-in: approve, deny and answer Claude Code's prompts from this page. It adds two hooks that wait for the
+ * answer, so it gets its own switch with a preview rather than riding along with "Connect".
+ */
+function RemoteActionsRow({
+  remote,
+  onSetup,
+}: {
+  remote: Setup["remoteActions"];
+  onSetup: (setup: Setup) => void;
+}) {
+  const [step, setStep] = useState<Step>({ kind: "idle" });
+  const on = remote.enabled && remote.installed;
+  const names = remote.tools.join(", ");
+
+  const run = async (enabled: boolean, dryRun: boolean) => {
+    setStep({ kind: "busy" });
+    try {
+      const { results, setup } = await setRemoteActions(enabled, dryRun);
+      const result = results[0];
+      if (!result) throw new Error("No result");
+      onSetup(setup);
+      setStep(dryRun && result.changed ? { kind: "preview", result } : { kind: "done", result });
+    } catch (error) {
+      setStep({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  return (
+    <div className="setup-remote">
+      <div className="setup-row-main">
+        <span className="setup-name">Answer prompts from here ({names})</span>
+        <span className="setup-path">
+          Approve or deny permission requests and answer questions from this page.
+        </span>
+      </div>
+      <div className="setup-row-action">
+        {step.kind !== "preview" && (
+          <button
+            type="button"
+            className="open-button"
+            disabled={step.kind === "busy"}
+            onClick={() => void run(!on, true)}
+          >
+            {step.kind === "busy" ? "Checking…" : on ? "Turn off" : "Turn on"}
+          </button>
+        )}
+      </div>
+      {step.kind === "preview" && (
+        <div className="setup-detail">
+          <p>
+            This {on ? "removes" : "adds"} hooks in <code>{step.result.configPath}</code>. A backup is saved
+            first.
+          </p>
+          <ul className="setup-changes">
+            {step.result.summary.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {!on && (
+            <p>
+              While a visible tab of this page is open, Claude Code's questions wait here for up to about 100
+              seconds instead of showing in the terminal (permission prompts may too); hide or close the tab
+              and the terminal asks as usual. Any program on this computer can approve commands through this
+              page, so don't turn this on on a shared computer. The command shown here stays in memory only.
+            </p>
+          )}
+          <div className="setup-buttons">
+            <button type="button" className="primary-button" onClick={() => void run(!on, false)}>
+              {on ? "Turn off" : "Turn on"}
+            </button>
+            <button type="button" className="text-button" onClick={() => setStep({ kind: "idle" })}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {step.kind === "done" && (
+        <div className="setup-detail">
+          <p>{on ? "On." : "Off."} Start a new Claude Code session for it to take effect.</p>
+        </div>
+      )}
+      {step.kind === "error" && (
+        <div className="setup-detail setup-error">
+          <p>{step.message}</p>
+        </div>
+      )}
+    </div>
   );
 }
 

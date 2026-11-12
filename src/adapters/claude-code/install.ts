@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { addClaudeStyleHooks, removeClaudeStyleHooks } from "../shared/claude-style-hooks.js";
 import { updateJsonFile } from "../shared/json-config.js";
-import { type InstallOptions, type InstallResult, isOurHookCommand } from "../types.js";
+import { type InstallOptions, type InstallResult, isOurDecideCommand, isOurHookCommand } from "../types.js";
 import { claudeCodeMeta } from "./meta.js";
 
 /** Each event maps to a status in normalize.ts. Keep the two lists in sync. */
@@ -24,7 +24,19 @@ export function claudeSettingsPath(options: Pick<InstallOptions, "homeDir" | "en
   );
 }
 
-const isOurs = (command: unknown) => isOurHookCommand(command, claudeCodeMeta.id);
+/**
+ * The opt-in hooks that let the dashboard answer a permission prompt or an AskUserQuestion. They run `decide`, which
+ * waits for the answer, so they are not async and get a longer timeout (seconds) than the plain hooks.
+ */
+export const CLAUDE_DECIDE_HOOKS = {
+  PermissionRequest: "*",
+  PreToolUse: "AskUserQuestion",
+} as const;
+export const DECIDE_TIMEOUT_SECONDS = 120;
+
+const isHookCommand = (command: unknown) => isOurHookCommand(command, claudeCodeMeta.id);
+const isDecideCommand = (command: unknown) => isOurDecideCommand(command, claudeCodeMeta.id);
+const isOurs = (command: unknown) => isHookCommand(command) || isDecideCommand(command);
 
 export async function installClaudeCode(options: InstallOptions): Promise<InstallResult> {
   const configPath = claudeSettingsPath(options);
@@ -33,8 +45,30 @@ export async function installClaudeCode(options: InstallOptions): Promise<Instal
   const handler = { type: "command", command: options.hookCommand, async: true, timeout: 10 };
   const result = await updateJsonFile(
     configPath,
-    (settings) =>
-      addClaudeStyleHooks(settings, CLAUDE_HOOK_EVENTS, () => handler, isOurs, configPath, summary),
+    (settings) => {
+      addClaudeStyleHooks(settings, CLAUDE_HOOK_EVENTS, () => handler, isHookCommand, configPath, summary);
+      if (options.remoteActions === true) {
+        if (!options.decideCommand) throw new Error("remoteActions needs a decideCommand.");
+        const decide = {
+          type: "command",
+          command: options.decideCommand,
+          timeout: DECIDE_TIMEOUT_SECONDS,
+        };
+        const events = Object.keys(CLAUDE_DECIDE_HOOKS);
+        addClaudeStyleHooks(
+          settings,
+          events,
+          () => decide,
+          isDecideCommand,
+          configPath,
+          summary,
+          (event) => CLAUDE_DECIDE_HOOKS[event as keyof typeof CLAUDE_DECIDE_HOOKS],
+        );
+      } else if (options.remoteActions === false) {
+        removeClaudeStyleHooks(settings, isDecideCommand, configPath, summary);
+      }
+      return settings;
+    },
     { dryRun: options.dryRun },
   );
   return { configPath, summary, ...result };

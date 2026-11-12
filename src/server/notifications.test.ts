@@ -178,3 +178,24 @@ describe("helpers", () => {
     expect(vscodeUrl("/home/dev/app")).toBe("vscode://file/home/dev/app");
   });
 });
+
+describe("Claude Desktop notifications", () => {
+  it("opens the session link on auto click and falls back to the dashboard without one", () => {
+    const settings = defaultToolSettings("Claude Code", "#d97757", "im");
+    const session = {
+      key: "claude-code:s1",
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "/project",
+      host: "Claude Desktop",
+      status: "done" as const,
+      startedAt: "2026-10-16T12:00:00Z",
+      updatedAt: "2026-10-16T12:00:00Z",
+    };
+    const link = "claude://code/continue?session=local_abc&source=agentwatch";
+    expect(buildNotification(session, "done", settings, "http://127.0.0.1:7878", link).clickUrl).toBe(link);
+    expect(buildNotification(session, "done", settings, "http://127.0.0.1:7878").clickUrl).toBe(
+      "http://127.0.0.1:7878",
+    );
+  });
+});

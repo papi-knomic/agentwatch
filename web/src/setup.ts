@@ -21,6 +21,7 @@ export interface Setup {
   /** General steps that apply to every tool. */
   notes: string[];
   tools: SetupTool[];
+  remoteActions: { supported: boolean; enabled: boolean; installed: boolean; tools: string[] };
 }
 
 export interface ConnectResult {
@@ -35,7 +36,8 @@ export interface ConnectResult {
 /** null while loading; "unavailable" when the server has no setup endpoint (older server). */
 export type SetupState = Setup | null | "unavailable";
 
-export function useSetup(): { setup: SetupState; replace: (setup: Setup) => void } {
+/** `enabled` is false on a paired phone, which may not read the setup state (the server refuses it). */
+export function useSetup(enabled = true): { setup: SetupState; replace: (setup: Setup) => void } {
   const [setup, setSetup] = useState<SetupState>(null);
 
   const load = useCallback(async () => {
@@ -48,6 +50,7 @@ export function useSetup(): { setup: SetupState; replace: (setup: Setup) => void
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     void load();
     // Hooks can be installed from a terminal too; refresh when the user comes back to the tab.
     const onVisible = () => {
@@ -55,7 +58,7 @@ export function useSetup(): { setup: SetupState; replace: (setup: Setup) => void
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [load]);
+  }, [load, enabled]);
 
   return { setup, replace: setSetup };
 }
@@ -75,3 +78,58 @@ export async function connectTool(
   }
   return (await res.json()) as { results: ConnectResult[]; setup: Setup };
 }
+
+export async function setRemoteActions(
+  enabled: boolean,
+  dryRun: boolean,
+): Promise<{ results: ConnectResult[]; setup: Setup }> {
+  const res = await fetch("/api/setup/remote-actions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled, dryRun }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof body.error === "string" ? body.error : `Request failed (${res.status})`);
+  }
+  return (await res.json()) as { results: ConnectResult[]; setup: Setup };
+}
+
+/** What the server tells the browser about phone (ntfy) notifications. The access token itself is never sent. */
+export interface PhoneSettings {
+  enabled: boolean;
+  server: string;
+  topic: string;
+  includeDetails: boolean;
+  tokenSet: boolean;
+}
+
+export interface PhoneUpdate {
+  enabled?: boolean;
+  server?: string;
+  /** Omit to keep the current token; "" clears it. */
+  token?: string;
+  includeDetails?: boolean;
+  regenerateTopic?: boolean;
+}
+
+async function phoneRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof body.error === "string" ? body.error : `Request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export const getPhone = () => phoneRequest<PhoneSettings>("/api/setup/phone");
+
+export const savePhone = (update: PhoneUpdate) =>
+  phoneRequest<PhoneSettings>("/api/setup/phone", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(update),
+  });
+
+export const testPhone = () =>
+  phoneRequest<{ ok: boolean; error?: string }>("/api/setup/phone/test", { method: "POST" });

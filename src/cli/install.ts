@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
 import { adapters, getAdapter, toolDefaults } from "../adapters/index.js";
 import type { Adapter } from "../adapters/types.js";
-import { ensureConfig } from "../core/config.js";
+import { ensureConfig, setRemoteActionsFlag } from "../core/config.js";
 import { APP_NAME } from "../core/constants.js";
 import { registerWindowsAppId, unregisterWindowsAppId, WINDOWS_APP_KEY } from "../notify/windows-identity.js";
-import { buildHookCommand } from "./hook-command.js";
+import { buildDecideCommand, buildHookCommand } from "./hook-command.js";
 import { openUrl } from "./open.js";
 import { assertStableInstall, autostart, startInBackground } from "./service.js";
 
@@ -26,6 +26,8 @@ export async function installCommand(options: {
   dryRun: boolean;
   home: string | undefined;
   cliPath: string;
+  /** true: opt in to answering prompts from the dashboard; false: opt out; undefined: leave as it is. */
+  remoteActions?: boolean | undefined;
 }): Promise<void> {
   const targets = resolveTargets(options.tool);
   if (!options.uninstall && !options.home) assertStableInstall(options.cliPath);
@@ -42,6 +44,12 @@ export async function installCommand(options: {
       env,
       dryRun: options.dryRun,
       hookCommand: buildHookCommand(options.cliPath, adapter.meta.id),
+      ...(adapter.meta.remoteActions && options.remoteActions !== undefined
+        ? {
+            remoteActions: options.remoteActions,
+            decideCommand: buildDecideCommand(options.cliPath, adapter.meta.id),
+          }
+        : {}),
     };
     const result = options.uninstall
       ? await adapter.uninstall(installOptions)
@@ -58,6 +66,16 @@ export async function installCommand(options: {
     if (result.backupPath) console.log(`  Backup: ${result.backupPath}`);
     for (const note of result.notes ?? []) console.log(`  Next: ${note}`);
   }
+
+  await syncRemoteActionsFlag({
+    remoteActions: options.remoteActions,
+    uninstall: options.uninstall,
+    dryRun: options.dryRun,
+    sandboxed: options.home !== undefined,
+    supported: targets.some((a) => a.meta.remoteActions),
+    targetNames: targets.map((a) => a.meta.displayName).join(", "),
+    log: console.log,
+  });
 
   // The notification name is shared by every tool, so only `uninstall --tool all` removes it.
   // An explicit --home is a sandbox (tests, trying things out): leave the registry alone then.
@@ -89,11 +107,49 @@ export async function installCommand(options: {
   }
 }
 
+/**
+ * The `decide` hooks do nothing unless the config flag is on too, so both flip together. Only claims a change when
+ * a tool that has the hooks (Claude Code) is among the targets, and an uninstall of it turns the flag off again
+ * (it is ours, and leaving it on with no hooks would be misleading). Not in a `--home` sandbox.
+ */
+export async function syncRemoteActionsFlag(options: {
+  remoteActions: boolean | undefined;
+  uninstall: boolean;
+  dryRun: boolean;
+  sandboxed: boolean;
+  supported: boolean;
+  targetNames: string;
+  log: (line: string) => void;
+  env?: NodeJS.ProcessEnv;
+}): Promise<void> {
+  const { remoteActions, uninstall, dryRun, log } = options;
+  if (!options.supported) {
+    if (remoteActions !== undefined && !uninstall) {
+      log(`Remote actions: not available for ${options.targetNames} (Claude Code only), nothing changed.`);
+    }
+    return;
+  }
+  if (!uninstall && remoteActions === undefined) return;
+  const wanted = uninstall ? false : remoteActions === true;
+  if (options.sandboxed) {
+    log("Remote actions: the config flag is unchanged because --home was given.");
+    return;
+  }
+  if (dryRun) {
+    log(`Remote actions: would turn ${wanted ? "on" : "off"}.`);
+    return;
+  }
+  if (!uninstall) await ensureConfig(toolDefaults(), options.env);
+  await setRemoteActionsFlag(wanted, options.env);
+  log(`Remote actions: ${wanted ? "on" : "off"} (restart the dashboard to apply)`);
+}
+
 /** One command from zero to working: hooks for every tool, start at login, server running, dashboard open. */
 export async function setupCommand(options: {
   cliPath: string;
   autostart: boolean;
   open: boolean;
+  remoteActions?: boolean | undefined;
 }): Promise<void> {
   assertStableInstall(options.cliPath);
   await installCommand({
@@ -102,6 +158,7 @@ export async function setupCommand(options: {
     dryRun: false,
     home: undefined,
     cliPath: options.cliPath,
+    remoteActions: options.remoteActions,
   });
 
   if (options.autostart) {
