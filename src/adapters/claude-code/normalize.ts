@@ -27,6 +27,8 @@ function str(value: unknown): string | undefined {
 export function detectClaudeHost(env: NodeJS.ProcessEnv): string | undefined {
   const entrypoint = env.CLAUDE_CODE_ENTRYPOINT;
   if (entrypoint === "claude-vscode") return "VS Code";
+  // Before the terminal fallback: the app can leak terminal env vars from however it was launched.
+  if (entrypoint === "claude-desktop" || entrypoint === "claude-desktop-3p") return "Claude Desktop";
   if (entrypoint === "cli") return detectTerminalHost(env) ?? "Terminal";
   return detectTerminalHost(env) ?? entrypoint;
 }

@@ -25,3 +25,15 @@ describe("claudeCodeSessionLink", () => {
     expect(claudeCodeSessionLink(base)).toBeUndefined();
   });
 });
+
+describe("claudeCodeSessionLink for Claude Desktop", () => {
+  const desktop = { ...base, host: "Claude Desktop" };
+  it("links to the app's own session id", () => {
+    expect(claudeCodeSessionLink(desktop, () => "local_abc-123")).toBe(
+      "claude://code/continue?session=local_abc-123&source=agentwatch",
+    );
+  });
+  it("has no link when the app's id can't be found, rather than guessing with session=last", () => {
+    expect(claudeCodeSessionLink(desktop, () => undefined)).toBeUndefined();
+  });
+});

@@ -18,6 +18,11 @@ afterEach(() => {
 });
 
 describe("sessionOpenUrls", () => {
+  it("opens Claude Desktop links directly", () => {
+    const url = "claude://code/continue?session=local_abc&source=agentwatch";
+    expect(sessionOpenUrls({ ...base, host: "Claude Desktop" }, url)).toEqual([url]);
+    expect(sessionOpenUrls({ ...base, host: "Claude Desktop" }, undefined)).toEqual([]);
+  });
   it("opens standalone app links directly without launching a VS Code window", () => {
     expect(sessionOpenUrls({ ...base, host: "Codex Desktop" }, "codex://threads/s1")).toEqual([
       "codex://threads/s1",

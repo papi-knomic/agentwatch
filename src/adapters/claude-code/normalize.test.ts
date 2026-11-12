@@ -127,4 +127,11 @@ describe("detectClaudeHost", () => {
     expect(detectClaudeHost({ CLAUDE_CODE_ENTRYPOINT: "cli" })).toBe("Terminal");
     expect(detectClaudeHost({})).toBeUndefined();
   });
+
+  it("detects the Claude desktop app before any terminal fallback", () => {
+    expect(detectClaudeHost({ CLAUDE_CODE_ENTRYPOINT: "claude-desktop" })).toBe("Claude Desktop");
+    expect(detectClaudeHost({ CLAUDE_CODE_ENTRYPOINT: "claude-desktop-3p", WT_SESSION: "abc" })).toBe(
+      "Claude Desktop",
+    );
+  });
 });
