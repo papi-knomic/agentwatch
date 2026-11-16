@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
+import type { BackgroundHold } from "../../src/core/decision-types.js";
 import { PhoneNotifications } from "./PhoneSettings";
 import { PhoneWizard } from "./PhoneWizard";
 import { RemoteAccess } from "./RemoteAccess";
 import { SETTINGS_TABS, type SettingsTab, settingsHref } from "./route";
 import { AgentsSection, CopyCommand, RemoteActionsRow } from "./SetupPanel";
-import { getPhone, type PhoneSettings, type Setup } from "./setup";
+import { getPhone, type PhoneSettings, type Setup, setBackgroundHold } from "./setup";
 import type { Permission } from "./WaitingPanel";
 
 function partlySetUp(setup: Setup): boolean {
@@ -205,17 +206,72 @@ function AnsweringTab({ setup, onSetup }: { setup: Setup | null; onSetup: (setup
           While a dashboard tab is visible, Claude Code waits up to about 100 seconds for your answer here.
         </li>
         <li>
-          If the tab is hidden or covered, it waits about 15 seconds (with a browser alert if enabled), then
-          the normal terminal prompt appears.
+          If the tab is hidden or covered, what happens is your choice below (browser alerts, if enabled,
+          still tell you a prompt is waiting).
         </li>
         <li>With no dashboard tab open, it never waits: the terminal asks as usual.</li>
       </ul>
       {setup?.remoteActions.supported ? (
-        <RemoteActionsRow remote={setup.remoteActions} onSetup={onSetup} />
+        <>
+          <RemoteActionsRow remote={setup.remoteActions} onSetup={onSetup} />
+          <BackgroundHoldChoice current={setup.remoteActions.backgroundHold} onSetup={onSetup} />
+        </>
       ) : (
         <p className="settings-text settings-muted">Not available on this server.</p>
       )}
     </section>
+  );
+}
+
+const BACKGROUND_HOLD_OPTIONS: { value: BackgroundHold; label: string }[] = [
+  { value: "full", label: "Wait for the dashboard (up to ~100s; the terminal shows nothing until then)" },
+  { value: "short", label: "Wait briefly (~15s), then the terminal" },
+  { value: "off", label: "Go straight to the terminal" },
+];
+
+function BackgroundHoldChoice({
+  current,
+  onSetup,
+}: {
+  current: BackgroundHold;
+  onSetup: (setup: Setup) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const choose = async (mode: BackgroundHold) => {
+    setBusy(true);
+    setError(null);
+    try {
+      onSetup(await setBackgroundHold(mode));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <fieldset className="settings-choice" disabled={busy}>
+      <legend>When the dashboard is open in the background, terminal prompts:</legend>
+      {BACKGROUND_HOLD_OPTIONS.map((option) => (
+        <label key={option.value}>
+          <input
+            type="radio"
+            name="background-hold"
+            value={option.value}
+            checked={current === option.value}
+            onChange={() => void choose(option.value)}
+          />{" "}
+          {option.label}
+        </label>
+      ))}
+      <p className="settings-text settings-muted">
+        VS Code and the Claude app always show their own prompt too, so their cards stay up regardless of this
+        setting.
+      </p>
+      {error && <p className="settings-text">{error}</p>}
+    </fieldset>
   );
 }
 

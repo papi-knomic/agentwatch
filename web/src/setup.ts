@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { BackgroundHold } from "../../src/core/decision-types.js";
 
 export interface SetupTool {
   id: string;
@@ -21,7 +22,14 @@ export interface Setup {
   /** General steps that apply to every tool. */
   notes: string[];
   tools: SetupTool[];
-  remoteActions: { supported: boolean; enabled: boolean; installed: boolean; tools: string[] };
+  remoteActions: {
+    supported: boolean;
+    enabled: boolean;
+    installed: boolean;
+    tools: string[];
+    /** What terminal prompts do while the dashboard is only open in the background. */
+    backgroundHold: BackgroundHold;
+  };
 }
 
 export interface ConnectResult {
@@ -93,6 +101,19 @@ export async function setRemoteActions(
     throw new Error(typeof body.error === "string" ? body.error : `Request failed (${res.status})`);
   }
   return (await res.json()) as { results: ConnectResult[]; setup: Setup };
+}
+
+export async function setBackgroundHold(backgroundHold: BackgroundHold): Promise<Setup> {
+  const res = await fetch("/api/setup/remote-actions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ backgroundHold }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof body.error === "string" ? body.error : `Request failed (${res.status})`);
+  }
+  return ((await res.json()) as { setup: Setup }).setup;
 }
 
 /** What the server tells the browser about phone (ntfy) notifications. The access token itself is never sent. */

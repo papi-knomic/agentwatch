@@ -36,6 +36,8 @@ export interface PendingDecision {
    * answer, and the prompt is not held back. Absent for a normal decision.
    */
   concurrent?: boolean;
+  /** Blocking decisions only: the background-hold setting in force when it was registered (for the card text). */
+  backgroundHold?: BackgroundHold;
   createdAt: string;
   expiresAt: string;
 }
@@ -68,6 +70,14 @@ export const DECISION_TTL_MS = 100_000;
  * it to DECISION_TTL_MS.
  */
 export const DECISION_SHORT_HOLD_MS = 15_000;
+/**
+ * What a blocking prompt (terminal CLI, every AskUserQuestion) does while the dashboard is only open in the
+ * background: "full" waits the whole DECISION_TTL_MS, "short" only DECISION_SHORT_HOLD_MS, "off" hands the prompt back
+ * to the terminal as soon as no tab is visible. Concurrent prompts ignore it.
+ */
+export const BACKGROUND_HOLDS = ["full", "short", "off"] as const;
+export type BackgroundHold = (typeof BACKGROUND_HOLDS)[number];
+export const DEFAULT_BACKGROUND_HOLD: BackgroundHold = "full";
 /**
  * Hosts that show their own Approve/Deny UI next to the hook (VS Code extension, Claude desktop app) don't have their
  * prompt held back by `decide`: the dashboard card is one more place to answer, whichever answers first wins. So the

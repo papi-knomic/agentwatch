@@ -100,6 +100,25 @@ describe("setup service", () => {
       expect(saved).toEqual([true]);
     });
 
+    it("saves the background hold and applies it to the live config", async () => {
+      const modes: string[] = [];
+      const config = { port: 1, token: "x".repeat(32), notifications: true, tools: toolDefaults() };
+      const setup = createSetupService({
+        adapters,
+        config,
+        homeDir: home,
+        env: {},
+        hookCommandFor: (id) => `node "/opt/aw/cli.js" hook --tool ${id}`,
+        saveBackgroundHold: async (mode) => {
+          modes.push(mode);
+        },
+      });
+      expect((await setup.setBackgroundHold("off")).remoteActions.backgroundHold).toBe("off");
+      expect(modes).toEqual(["off"]);
+      expect((config as { remoteActionsBackgroundHold?: string }).remoteActionsBackgroundHold).toBe("off");
+      await expect(service().setBackgroundHold("short")).rejects.toThrow(/isn't available/);
+    });
+
     it("is unsupported without a way to save the config", async () => {
       expect((await service().status()).remoteActions.supported).toBe(false);
       await expect(service().setRemoteActions(true, false)).rejects.toThrow(/aren't available/);
@@ -108,7 +127,13 @@ describe("setup service", () => {
     it("previews, turns on, and turns off, saving the flag only for real runs", async () => {
       const { setup, saved, config } = remoteService();
       const initial = (await setup.status()).remoteActions;
-      expect(initial).toEqual({ supported: true, enabled: false, installed: false, tools: ["Claude Code"] });
+      expect(initial).toEqual({
+        supported: true,
+        enabled: false,
+        installed: false,
+        tools: ["Claude Code"],
+        backgroundHold: "full",
+      });
 
       const preview = await setup.setRemoteActions(true, true);
       expect(preview.results[0]?.summary).toContain("add PermissionRequest hook (*)");

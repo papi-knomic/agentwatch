@@ -149,9 +149,14 @@ How it behaves:
   silently at once and Claude Code asks you as usual.
 - **While a visible tab is open, Claude Code's question waits for the dashboard: it is not shown in the terminal
   meanwhile.** (The hook runs before Claude Code's own question UI.) That lasts until you answer, for up to about
-  100 seconds. If the tab is open but hidden (behind another window, minimized, or in a background tab; Chrome treats
-  all of those as hidden) the wait is only 15 seconds, then the question appears in the terminal. Bring the tab
-  forward in that time and the full wait applies again.
+  100 seconds. A tab that is open but hidden (behind another window, minimized, or in a background tab; Chrome treats
+  all of those as hidden) is handled by a setting in Settings, Answering tab, "When the dashboard is open in the
+  background, terminal prompts": **wait for the dashboard** (the default: the full 100 seconds, the terminal shows
+  nothing until then), **wait briefly** (about 15 seconds, then the terminal; bringing the tab forward restores the
+  full wait) or **go straight to the terminal** (only a visible tab holds a prompt; hide the last visible tab and
+  the terminal prompt appears after about 2 seconds). It is the `remoteActionsBackgroundHold` key in
+  `config.json` (`full`, `short`, `off`) and applies without a restart. With no dashboard tab open at all
+  the terminal asks as usual, in every mode.
   Permission prompts in the terminal may behave the same way; that is not verified.
 - **VS Code extension and Claude desktop app:** these show their own Approve/Deny UI. The docs say hooks for such a
   call "run alongside your host, and whichever decides first applies" (that these hosts take that path is inferred,
@@ -165,10 +170,14 @@ How it behaves:
   collapsed folders. The tab title and icon show how many are waiting. Click **Enable browser alerts** there (once; it
   asks the browser for permission) to also get a browser notification when one arrives while the tab is hidden; it
   names only the agent and project, never the command.
-- With subagents, the card says which one is asking. One agent's activity no longer clears another's pending prompt.
+- With subagents, the card says which one is asking. While the hook waits for a terminal prompt, nothing else can
+  answer it, so no activity from any agent clears the card; it ends when you answer, when the hook goes away (for
+  example you press Esc in Claude Code), when the session ends or when time runs out. `agentwatch debug decisions`
+  shows which of these ended each one.
   For that, run `agentwatch install --tool claude-code` once more: it adds the `PermissionRequest` and `SubagentStop`
   status hooks (nothing else changes).
-- If the answer was given elsewhere (a session that moved on, for instance), the card clears.
+- VS Code and the Claude app show their own prompt too, so their cards stay up regardless of the background setting
+  and clear when that agent carries on after you answered there.
 - If nobody answers within about 100 seconds, the hook gives up and Claude Code's own prompt appears.
 - Only a short gap is tolerated: if the waiting hook disappears, the card is withdrawn after a few seconds so you
   are never offered an answer nobody will receive.

@@ -9,7 +9,11 @@ const ACTIVITY_AT = Date.parse("2026-10-16T11:59:55.000Z");
 /** When our "needs input" hook event arrived. */
 const PROMPT_AT = Date.parse("2026-10-16T12:00:00.000Z");
 
-function setup(listing: ChildProcessInfo[][] | ChildProcessInfo[], event: Partial<AgentEvent> = {}) {
+function setup(
+  listing: ChildProcessInfo[][] | ChildProcessInfo[],
+  event: Partial<AgentEvent> = {},
+  isHeld?: (key: string) => boolean,
+) {
   const store = new SessionStore();
   const base = { tool: "claude-code", sessionId: "s1", cwd: "C:\\projects\\demo", pid: 100, ...event };
   store.apply({
@@ -31,6 +35,7 @@ function setup(listing: ChildProcessInfo[][] | ChildProcessInfo[], event: Partia
   const queried: number[][] = [];
   const watcher = createApprovalWatcher({
     store,
+    ...(isHeld ? { isHeld } : {}),
     listChildren: async (pids) => {
       queried.push(pids);
       return ticks[Math.min(queried.length - 1, ticks.length - 1)] ?? [];
@@ -92,6 +97,40 @@ describe("approval watcher", () => {
     const { twoTicks, status } = setup([hook]);
     await twoTicks();
     expect(status()).toBe("needs_input");
+  });
+
+  it("never counts our own decide hook, or the shell Claude Code runs a hook command in", async () => {
+    const commands = [
+      {
+        name: "cmd.exe",
+        command: 'cmd.exe /d /s /c "node "C:/x/dist/cli/index.js" decide --tool claude-code"',
+      },
+      { name: "bash", command: "bash -c 'node /x/dist/cli/index.js decide --tool claude-code'" },
+      { name: "pwsh.exe", command: 'pwsh -Command "& agentwatch hook --tool claude-code"' },
+      { name: "sh", command: "sh -c agentwatch   decide  --tool claude-code" },
+    ];
+    const { twoTicks, status } = setup(commands.map((c, i) => child({ ...c, pid: 400 + i })));
+    await twoTicks();
+    expect(status()).toBe("needs_input");
+  });
+
+  it("still takes a user's command that merely mentions decide", async () => {
+    const { twoTicks, status } = setup([child({ command: 'cmd.exe /c "npm run decide"' })]);
+    await twoTicks();
+    expect(status()).toBe("working");
+  });
+
+  it("leaves a session alone while a blocking dashboard prompt holds it", async () => {
+    let held = true;
+    const { watcher, status, queried } = setup([child({})], {}, () => held);
+    await watcher.tick();
+    await watcher.tick();
+    expect(status()).toBe("needs_input");
+    expect(queried).toEqual([]); // nothing even listed for it
+    held = false;
+    await watcher.tick();
+    await watcher.tick();
+    expect(status()).toBe("working");
   });
 
   it("ignores non-shell children and other parents", async () => {

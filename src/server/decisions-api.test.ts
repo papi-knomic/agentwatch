@@ -33,7 +33,7 @@ beforeEach(async () => {
     tools: [{ id: "claude-code", label: "Claude Code", color: "#d97757" }],
     staticDir: "does-not-exist",
     version: "0.0.0-test",
-    presence: { graceMs: 150 },
+    presence: { graceMs: 150, hiddenMs: 150 },
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   port = (server.address() as AddressInfo).port;
@@ -175,7 +175,8 @@ describe("who counts as a viewer", () => {
     expect(await post()).toEqual({ id: null, reason: "no_viewer" });
   });
 
-  it("holds a decision for the full lifetime with a visible tab, and only briefly with background tabs", async () => {
+  it("mode short: holds for the full lifetime with a visible tab, and only briefly with background tabs", async () => {
+    config.remoteActionsBackgroundHold = "short";
     await startSession();
     const lifetime = (id: string) => {
       const found = decisions.list().find((d) => d.id === id);
@@ -192,7 +193,8 @@ describe("who counts as a viewer", () => {
     expect(lifetime(await register())).toBe(60_000);
   });
 
-  it("extends a short hold when a tab becomes visible, and shortens a full one when it hides", async () => {
+  it("mode short: extends a short hold when a tab becomes visible, and shortens a full one when it hides", async () => {
+    config.remoteActionsBackgroundHold = "short";
     await startSession();
     const background = await openDashboard(false);
     const id = await register();
@@ -206,6 +208,7 @@ describe("who counts as a viewer", () => {
   });
 
   it("tells the dashboard when a short hold becomes a full one", async () => {
+    config.remoteActionsBackgroundHold = "short";
     await startSession();
     const background = await openDashboard(false);
     await register();
@@ -505,10 +508,10 @@ describe("GET /api/decisions/:id/wait", () => {
     expect(JSON.parse(res.body)).toEqual({ behavior: "allow" });
   });
 
-  it("returns 410 once cancelled by newer activity (answered in the terminal)", async () => {
+  it("returns 410 once a concurrent decision is cancelled by newer activity (answered in the host)", async () => {
     await startSession();
     await openDashboard();
-    const id = await register();
+    const id = await register({ ...permissionBody, concurrent: true });
     await new Promise((resolve) => setTimeout(resolve, 1600));
     await send("POST", "/api/events", {
       headers: auth,
@@ -641,7 +644,8 @@ describe("concurrent decisions (VS Code / Claude Desktop permission and plan pro
     expect(byId.get(plain)).not.toHaveProperty("concurrent");
   });
 
-  it("keeps the old rules for a question, even if the caller claims concurrent", async () => {
+  it("keeps the blocking rules for a question, even if the caller claims concurrent", async () => {
+    config.remoteActionsBackgroundHold = "short";
     await startSession();
     const none = await send("POST", "/api/decisions", {
       headers: auth,
@@ -739,5 +743,123 @@ describe("GET /api/debug/decisions", () => {
     expect((await send("GET", "/api/debug/decisions", { headers: { host: "evil.example" } })).status).toBe(
       403,
     );
+  });
+});
+
+describe("background hold modes (blocking prompts)", () => {
+  const lifetime = (id: string) => {
+    const found = decisions.list().find((d) => d.id === id);
+    return Date.parse(found?.expiresAt ?? "") - Date.parse(found?.createdAt ?? "");
+  };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const post = async (body: unknown = permissionBody) =>
+    JSON.parse((await send("POST", "/api/decisions", { headers: auth, body })).body) as {
+      id: string | null;
+      reason?: string;
+    };
+
+  it("full (default): a hidden-only tab gets the full hold, and hiding never shortens it", async () => {
+    await startSession();
+    const background = await openDashboard(false);
+    const id = (await post()).id as string;
+    expect(lifetime(id)).toBe(60_000);
+    expect(decisions.list().find((d) => d.id === id)?.backgroundHold).toBe("full");
+
+    const tab = await openDashboard(true);
+    const second = (await post()).id as string;
+    await tab.setVisible(false);
+    await sleep(500);
+    expect(decisions.list().map((d) => d.id)).toEqual([id, second]);
+    expect(lifetime(second)).toBe(60_000);
+    background.close();
+  });
+
+  it("full: no connected tab at all still cancels after the grace", async () => {
+    await startSession();
+    const background = await openDashboard(false);
+    const id = (await post()).id as string;
+    background.close();
+    await sleep(500);
+    expect(decisions.list()).toEqual([]);
+    expect(decisions.debugLog().find((r) => r.outcome === "registered")?.end).toBe("no_viewer_cancel");
+    expect((await post()).id).toBeNull();
+    expect(id).toEqual(expect.any(String));
+  });
+
+  it("short: a hidden-only tab gets the short hold", async () => {
+    config.remoteActionsBackgroundHold = "short";
+    await startSession();
+    await openDashboard(false);
+    expect(lifetime((await post()).id as string)).toBe(300);
+  });
+
+  it("off: not registered with only hidden tabs, registered with a visible one", async () => {
+    config.remoteActionsBackgroundHold = "off";
+    await startSession();
+    const tab = await openDashboard(false);
+    expect(await post()).toEqual({ id: null, reason: "no_viewer" });
+    await tab.setVisible(true);
+    const id = (await post()).id as string;
+    expect(lifetime(id)).toBe(60_000);
+    // A concurrent prompt is unaffected by the setting.
+    expect((await post({ ...permissionBody, concurrent: true })).id).toEqual(expect.any(String));
+  });
+
+  it("off: hiding the last visible tab cancels blocking decisions after the debounce, not concurrent ones", async () => {
+    config.remoteActionsBackgroundHold = "off";
+    await startSession();
+    const tab = await openDashboard(true);
+    const id = (await post()).id as string;
+    const concurrent = (await post({ ...permissionBody, concurrent: true })).id as string;
+    await tab.setVisible(false);
+    expect(decisions.list().map((d) => d.id)).toEqual([id, concurrent]); // debounce: not yet
+    await tab.setVisible(true); // a quick flip back keeps it
+    await sleep(400);
+    expect(decisions.list().map((d) => d.id)).toEqual([id, concurrent]);
+
+    await tab.setVisible(false);
+    await sleep(500);
+    expect(decisions.list().map((d) => d.id)).toEqual([concurrent]);
+    expect(decisions.debugLog().find((r) => r.outcome === "registered")?.end).toBe("hidden_cancel");
+    expect((await send("GET", `/api/decisions/${id}/wait?ms=50`, { headers: auth })).status).toBe(410);
+  });
+
+  it("applies a changed setting without a restart", async () => {
+    await startSession();
+    const tab = await openDashboard(false);
+    const id = (await post()).id as string; // full
+    config.remoteActionsBackgroundHold = "short";
+    await tab.setVisible(false); // triggers a check
+    await sleep(30);
+    expect(lifetime(id)).toBeLessThan(60_000);
+    config.remoteActionsBackgroundHold = "full";
+    await tab.setVisible(false);
+    await sleep(30);
+    expect(lifetime(id)).toBe(60_000);
+  });
+
+  it("a blocking decision survives events from any agent and its own approval-watch style flip", async () => {
+    await startSession();
+    await openDashboard(true);
+    const id = (await post()).id as string;
+    await sleep(1700); // past the cancel grace that used to matter
+    for (const body of [
+      { status: "working", message: "Ran Bash" },
+      { status: "working", message: "Edit", agentId: "agentB" },
+      { status: "working", message: "Running approved command" },
+      { status: "needs_input", message: "Claude needs your permission" },
+    ]) {
+      await send("POST", "/api/events", {
+        headers: auth,
+        body: {
+          tool: "claude-code",
+          sessionId: "s1",
+          cwd: "C:p",
+          timestamp: new Date().toISOString(),
+          ...body,
+        },
+      });
+    }
+    expect(decisions.list().map((d) => d.id)).toEqual([id]);
   });
 });

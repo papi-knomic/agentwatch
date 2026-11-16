@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  type BackgroundHold,
   CONCURRENT_TTL_MS,
   DECISION_SHORT_HOLD_MS,
   DECISION_TTL_MS,
@@ -48,7 +49,10 @@ export type DebugEnd =
   | "expired_short"
   | "expired_full"
   | "orphan"
-  | "no_viewer_cancel";
+  /** No tab connected for the grace period. */
+  | "no_viewer_cancel"
+  /** Mode "off": every tab went to the background. */
+  | "hidden_cancel";
 
 /**
  * One line of the diagnostics ring buffer. Deliberately has no preview, command, question or plan text (AGENTS.md
@@ -103,6 +107,8 @@ export interface NewDecision {
    * The host shows its own prompt alongside the hook (see CONCURRENT_TTL_MS): long hold, ignores who is looking.
    */
   concurrent?: boolean | undefined;
+  /** Blocking decisions: the background-hold setting at registration, shown on the card. */
+  backgroundHold?: BackgroundHold | undefined;
   /** Adapter id, for diagnostics only. */
   tool?: string | undefined;
   preview?: string | undefined;
@@ -234,6 +240,7 @@ export class DecisionStore {
     }
     if (input.kind === "question" && input.questions) decision.questions = input.questions;
     if (concurrent) decision.concurrent = true;
+    else if (input.backgroundHold) decision.backgroundHold = input.backgroundHold;
     // unref: a pending prompt must not keep the process alive.
     const timer = setTimeout(
       () =>
@@ -335,10 +342,24 @@ export class DecisionStore {
    * Cancels everything still unanswered, e.g. when no dashboard is being looked at any more. Concurrent decisions
    * are kept: their host shows its own prompt anyway, so nothing is being held back for a missing viewer.
    */
-  cancelPending(): void {
+  cancelPending(reason: DebugEnd = "no_viewer_cancel"): void {
     for (const [id, entry] of this.#entries) {
-      if (!entry.resolution && !entry.concurrent) this.#close(id, { type: "gone" }, "no_viewer_cancel");
+      if (!entry.resolution && !entry.concurrent) this.#close(id, { type: "gone" }, reason);
     }
+  }
+
+  /** Whether any unanswered blocking decision exists (the viewer rules only concern those). */
+  hasBlocking(): boolean {
+    for (const entry of this.#entries.values()) if (!entry.resolution && !entry.concurrent) return true;
+    return false;
+  }
+
+  /** A blocking decision of this session is pending: Claude Code is stopped in its hook, so nothing else can answer. */
+  hasBlockingFor(sessionKey: string): boolean {
+    for (const entry of this.#entries.values()) {
+      if (!entry.resolution && !entry.concurrent && entry.decision.sessionKey === sessionKey) return true;
+    }
+    return false;
   }
 
   cancelSession(sessionKey: string): void {
@@ -380,10 +401,14 @@ export class DecisionStore {
   }
 
   /**
-   * Cancels pending decisions when the agent that asked moves on without us: the user answered in the terminal (or
-   * the app), so that agent is already working again. Other agents of the same session don't count (subagents
+   * Concurrent decisions: cancelled when the agent that asked moves on without us (the user answered in the host's
+   * own prompt, so that agent is already working again). Other agents of the same session don't count (subagents
    * share the session id), unless the whole turn is over. Waiting for input again (the permission prompt's own
    * notification) is not moving on.
+   *
+   * Blocking decisions are never cancelled by events: while `decide` waits, Claude Code shows no prompt of its own,
+   * so no one else can have answered, and any event (another agent, an approval-watch guess, a Notification) is
+   * about something else. They end only by answer, orphan (Esc kills the hook), session end, expiry or viewer rules.
    */
   handleSessionChange(change: StoreChange): void {
     if (change.type === "remove") {
@@ -395,7 +420,7 @@ export class DecisionStore {
     if (source ? source.status === "needs_input" : session.status === "needs_input") return;
     const updated = Date.parse(session.updatedAt);
     for (const [id, entry] of this.#entries) {
-      if (entry.decision.sessionKey !== session.key || entry.resolution) continue;
+      if (!entry.concurrent || entry.decision.sessionKey !== session.key || entry.resolution) continue;
       if (source && !source.clearsAll && source.agentKey !== entry.agentKey) continue;
       if (updated > entry.createdMs + CANCEL_GRACE_MS) {
         this.#close(

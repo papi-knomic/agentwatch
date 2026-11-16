@@ -3,7 +3,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { type Config, normalizeRemoteHost, type RemoteConfig } from "../core/config.js";
 import { APP_NAME, MAX_EVENT_BODY_BYTES } from "../core/constants.js";
-import { parseQuestions, truncate } from "../core/decision-types.js";
+import {
+  BACKGROUND_HOLDS,
+  type BackgroundHold,
+  DEFAULT_BACKGROUND_HOLD,
+  parseQuestions,
+  truncate,
+} from "../core/decision-types.js";
 import { applyPhoneUpdate, type PhoneConfig, publicPhone } from "../core/phone.js";
 import type { SessionStore, StoreChange } from "../core/store.js";
 import { parseAgentEvent, parseAgentId, type Session, sessionKey } from "../core/types.js";
@@ -58,7 +64,7 @@ export interface AppServerOptions {
   /** Called after answering POST /api/shutdown (`agentwatch stop`). */
   onShutdown?: () => void;
   /** Presence timings in ms; only tests change these. */
-  presence?: { ttlMs?: number; graceMs?: number };
+  presence?: { ttlMs?: number; graceMs?: number; hiddenMs?: number };
 }
 
 const SSE_HEARTBEAT_MS = 25_000;
@@ -71,6 +77,8 @@ const MAX_WAIT_MS = 30_000;
 const PRESENCE_TTL_MS = 150_000;
 /** With no dashboard connected for this long, pending decisions are cancelled so the terminal prompt shows. */
 const NO_VIEWER_GRACE_MS = 5_000;
+/** Mode "off": all tabs must stay in the background this long before blocking prompts go back to the terminal. */
+const HIDDEN_DEBOUNCE_MS = 2_000;
 /** Display-only (e.g. "general-purpose"); anything else is dropped rather than shown. */
 const AGENT_TYPE = /^[\w .:-]{1,64}$/;
 const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -148,7 +156,14 @@ export function createAppServer(options: AppServerOptions): Server {
   >();
   const presenceTtlMs = options.presence?.ttlMs ?? PRESENCE_TTL_MS;
   const graceMs = options.presence?.graceMs ?? NO_VIEWER_GRACE_MS;
+  const hiddenMs = options.presence?.hiddenMs ?? HIDDEN_DEBOUNCE_MS;
   let noViewerSince: number | null = null;
+  let hiddenSince: number | null = null;
+
+  /** Read on every use: the setting changes without a restart. */
+  function holdMode(): BackgroundHold {
+    return config.remoteActionsBackgroundHold ?? DEFAULT_BACKGROUND_HOLD;
+  }
 
   /** A phone that can't answer prompts must not hold them back from the terminal. */
   function canHold(viewer: { deviceId?: string }): boolean {
@@ -173,31 +188,50 @@ export function createAppServer(options: AppServerOptions): Server {
     return false;
   }
 
-  // Keeps pending decisions in step with who is looking: visible → full lifetime, only background tabs → short
-  // hold, nobody connected for a moment → give the prompt back to the terminal.
+  // Keeps blocking decisions in step with who is looking (concurrent ones ignore this; see DecisionStore):
+  // - a tab is visible: full lifetime.
+  // - only background tabs: "full" keeps the full lifetime, "short" shrinks it to a brief hold, "off" gives the
+  //   prompt back to the terminal after a short debounce.
+  // - no tab connected for a moment: give the prompt back to the terminal, in every mode.
   function checkViewers(): void {
-    if (decisions.list().length === 0) {
+    if (!decisions.hasBlocking()) {
       noViewerSince = null;
+      hiddenSince = null;
       return;
     }
+    const mode = holdMode();
+    const now = Date.now();
     if (hasVisibleViewer()) {
       noViewerSince = null;
+      hiddenSince = null;
       decisions.extendShortHolds();
       return;
     }
     if (hasConnectedViewer()) {
       noViewerSince = null;
-      decisions.shortenFullHolds();
+      if (mode === "full") {
+        hiddenSince = null;
+        decisions.extendShortHolds(); // the setting may have just changed from "short"
+      } else if (mode === "short") {
+        hiddenSince = null;
+        decisions.shortenFullHolds();
+      } else {
+        hiddenSince ??= now;
+        if (now - hiddenSince >= hiddenMs) {
+          hiddenSince = null;
+          decisions.cancelPending("hidden_cancel");
+        }
+      }
       return;
     }
-    const now = Date.now();
+    hiddenSince = null;
     noViewerSince ??= now;
     if (now - noViewerSince >= graceMs) {
       noViewerSince = null;
       decisions.cancelPending();
     }
   }
-  const sweep = setInterval(checkViewers, Math.min(1000, Math.max(20, graceMs / 2)));
+  const sweep = setInterval(checkViewers, Math.min(1000, Math.max(20, Math.min(graceMs, hiddenMs) / 2)));
   sweep.unref();
   // The user answering in the terminal shows up as newer activity on the session.
   store.subscribe((change) => decisions.handleSessionChange(change));
@@ -535,10 +569,22 @@ export function createAppServer(options: AppServerOptions): Server {
         if (!sameOrigin) throw new HttpError(403, "Forbidden");
         if (!options.setup) throw new HttpError(404, "Not found");
         const body = await readJsonBody(req);
-        const { enabled, dryRun } = (typeof body === "object" && body !== null ? body : {}) as {
-          enabled?: unknown;
-          dryRun?: unknown;
-        };
+        const { enabled, dryRun, backgroundHold } = (
+          typeof body === "object" && body !== null ? body : {}
+        ) as { enabled?: unknown; dryRun?: unknown; backgroundHold?: unknown };
+        if (backgroundHold !== undefined) {
+          // The hold mode is the only thing this request changes when it is given; `enabled` is then not needed.
+          if (!(BACKGROUND_HOLDS as readonly unknown[]).includes(backgroundHold)) {
+            throw new HttpError(400, "Invalid backgroundHold");
+          }
+          try {
+            const setup = await options.setup.setBackgroundHold(backgroundHold as BackgroundHold);
+            checkViewers();
+            return sendJson(res, 200, { setup });
+          } catch (error) {
+            throw new HttpError(500, error instanceof Error ? error.message : String(error));
+          }
+        }
         if (typeof enabled !== "boolean") throw new HttpError(400, "Missing enabled");
         try {
           return sendJson(res, 200, await options.setup.setRemoteActions(enabled, dryRun === true));
@@ -708,7 +754,9 @@ export function createAppServer(options: AppServerOptions): Server {
       tool,
     };
     // A concurrent prompt is already on screen in its host, so it needs no viewer now: the card shows up when a tab opens.
-    if (!concurrent && !hasConnectedViewer()) {
+    const mode = holdMode();
+    // Mode "off" only holds the terminal prompt back while a tab is actually in front of the user.
+    if (!concurrent && !(mode === "off" ? hasVisibleViewer() : hasConnectedViewer())) {
       decisions.logRejected(attempt, "no_viewer");
       return sendJson(res, 200, { id: null, reason: "no_viewer" });
     }
@@ -723,7 +771,8 @@ export function createAppServer(options: AppServerOptions): Server {
         typeof record.agentType === "string" && AGENT_TYPE.test(record.agentType)
           ? record.agentType
           : undefined,
-      hold: hasVisibleViewer() ? "full" : "short",
+      hold: mode === "short" && !hasVisibleViewer() ? "short" : "full",
+      backgroundHold: mode,
       preview: typeof preview === "string" ? preview : undefined,
       questions: questions ?? undefined,
     });

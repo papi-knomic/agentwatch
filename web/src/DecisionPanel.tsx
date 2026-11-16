@@ -1,5 +1,9 @@
 import { useId, useState } from "react";
-import { type DecisionQuestion, PLAN_FEEDBACK_MAX } from "../../src/core/decision-types.js";
+import {
+  type BackgroundHold,
+  type DecisionQuestion,
+  PLAN_FEEDBACK_MAX,
+} from "../../src/core/decision-types.js";
 import { type PendingDecision, type ResolveOutcome, resolveDecision } from "./useAgentStream";
 
 type Phase = "idle" | "sending" | ResolveOutcome;
@@ -11,6 +15,14 @@ export function concurrentPlace(host: string | undefined): string {
   return "its own window";
 }
 
+/** What the "terminal prompts while in the background" setting means for a card. */
+const HOLD_TEXT: Record<BackgroundHold, string> = {
+  full: "It waits up to about 100 seconds, even while this tab is in the background.",
+  short:
+    "While this tab is visible it waits up to about 100 seconds; if the tab is hidden it waits about 15 seconds.",
+  off: "It waits up to about 100 seconds while this tab is visible; if the tab is hidden, the terminal prompt appears within a couple of seconds.",
+};
+
 const OUTCOME_NOTE: Partial<Record<Phase, string>> = {
   answered: "Already answered.",
   gone: "This request is over: it timed out, the dashboard was disconnected, or it was answered elsewhere.",
@@ -20,7 +32,7 @@ const OUTCOME_NOTE: Partial<Record<Phase, string>> = {
 /**
  * A pending permission prompt or question for one session (opt-in "remote actions"). The answer goes to the local
  * server, which hands it to the waiting hook. While a visible tab is open, Claude Code waits for this panel (its own
- * prompt is not shown in the terminal meanwhile) for up to about 100 s; with only hidden tabs, for 15 s; with none, not
+ * prompt is not shown in the terminal meanwhile) for up to about 100 s; with only hidden tabs it depends on the background-hold setting; with none, not
  * at all.
  */
 export function DecisionPanel({
@@ -140,9 +152,9 @@ export function DecisionPanel({
       )}
       {canAnswer && !over && decision.concurrent !== true && (
         <p className="decision-note">
-          Claude Code is waiting for this answer and is not showing it in the terminal meanwhile. While this
-          tab is visible it waits up to about 100 seconds; if the tab is hidden it waits about 15 seconds.
-          Closing all dashboard tabs hands the prompt back to the terminal within about 5 seconds.
+          Claude Code is waiting for this answer and is not showing it in the terminal meanwhile.{" "}
+          {HOLD_TEXT[decision.backgroundHold ?? "full"]} Closing all dashboard tabs hands the prompt back to
+          the terminal within about 5 seconds.
         </p>
       )}
     </fieldset>

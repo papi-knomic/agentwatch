@@ -222,23 +222,33 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   decisions go to the dashboard as SSE `decision` / `decision-remove` events (and `decisions` in `snapshot` and
   `/api/state`; a short hold becoming a full one is re-sent as `decision`); they are not part of `Session` and never
   persisted. A decision records the requesting agent (`agentId`, `agentType` for display, from the hook payload). It is
-  cancelled by a newer non-`needs_input` event (event time more than 1.5s after the request was created) from the
-  same agent, by a main-agent turn end or new prompt (any agent), by that subagent's `SubagentStop`, session end,
-  expiry, no `wait` request attached for 3s, or no connected dashboard tab for 5s; other agents' events (e.g. the
-  main agent's `PostToolUse(Agent)` while subagents run) don't cancel it. Presence: each tab sends a random client id on
+  never cancelled by session events if blocking (terminal CLI, every AskUserQuestion): while `decide`'s wait is attached
+  Claude Code shows no prompt of its own, so nothing else can have answered, and an event (another agent, main agent,
+  Notification, approval-watch's synthetic "working") is about something else. A blocking decision ends only by
+  answer, its `wait` detaching for 3s (orphan timer; an Esc/interrupt kills the hook), session end, expiry (100s),
+  or the viewer rules below. A concurrent one (VS Code / Claude app, user may answer in the host) is also cancelled by
+  a newer non-`needs_input` event (more than 1.5s after the request) from the same agent, a main-agent turn end or
+  new prompt, or that subagent's `SubagentStop`. `approval-watch.ts` skips sessions with a pending blocking
+  decision and ignores shells running our own `hook --tool` / `decide --tool`. The debug log records the ending
+  rule of each decision (`end`). Presence: each tab sends a random client id on
   `/api/stream?client=` and `POST /api/presence {clientId, visible}` (on connect, on visibility change, every 20s
   hidden or not). A tab is "connected" while its event stream is open (hidden tabs' timers are throttled, so reports
-  aren't relied on for that); it is "visible" if it reported visible within 150s. Any connected tab lets a decision be
-  registered; with a visible tab it is held for the full 100s lifetime (below `decide`'s 110s deadline); with only
-  hidden tabs it is held 15s, then cancelled so `decide` prints nothing and Claude Code asks in the terminal; a tab
-  becoming visible extends it to the full lifetime, all tabs hiding shortens it to 15s from then (Chrome on Windows
-  reports covered and minimized windows as hidden, hence this). Phone tabs count only with "Allow approvals". The
+  aren't relied on for that); it is "visible" if it reported visible within 150s. With no connected tab a blocking
+  decision isn't registered (cancelled after 5s if the last tab goes), in every mode. Otherwise the user setting
+  `config.remoteActionsBackgroundHold` (`full` default | `short` | `off`; read live; changed from Settings > Answering
+  via `POST /api/setup/remote-actions {backgroundHold}`, same loopback + dashboard-Origin guards, shown as
+  `remoteActions.backgroundHold` in `GET /api/setup`) decides for hidden-only tabs: `full` holds the full 100s lifetime
+  (below `decide`'s 110s deadline) and never shortens on hide; `short` holds 15s then cancels so `decide` prints
+  nothing and Claude Code asks in the terminal (visible again extends to the full lifetime, all tabs hiding shortens
+  to 15s from then); `off` registers only with a visible tab and cancels blocking decisions 2s after the last
+  visible tab hides (`hidden_cancel`). Chrome on Windows reports covered and minimized windows as hidden, hence
+  these options. Concurrent decisions ignore the setting. Phone tabs count only with "Allow approvals". The
   dashboard shows every pending decision in a sticky "Waiting for you" area (ignores filters and collapsing), puts the
   count in the tab title and favicon, and, only after the user clicks "Enable browser alerts", shows a browser
   notification naming the tool and project (never the preview) when a decision arrives while the tab is hidden.
   `decide` retries registration once after 300ms on `unknown_session` (the regular hook may still be in flight). The
   hook runs before Claude Code's own question UI, so while a visible tab is open the AskUserQuestion prompt waits for the
-  dashboard (not shown in the terminal) for up to ~100s, or 15s once the tabs are hidden;
+  dashboard (not shown in the terminal) for up to ~100s (less when the tabs are hidden, per the setting above);
   `PermissionRequest` may do the same in the terminal CLI (unverified).
   Concurrent hosts: for VS Code and Claude Desktop (`CLAUDE_CODE_ENTRYPOINT` `claude-vscode`, `claude-desktop`,
   `claude-desktop-3p`) `PermissionRequest` decisions (permission and plan, never AskUserQuestion) are sent with

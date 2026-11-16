@@ -250,8 +250,11 @@ describe("DecisionStore", () => {
     await expect(store.wait("nope", 10)).resolves.toEqual({ type: "unknown" });
   });
 
-  it("is cancelled by newer activity on the session (answered in the terminal)", async () => {
-    const { id } = permission();
+  const concurrentPermission = () =>
+    store.create({ sessionKey: "claude-code:s1", kind: "permission", toolName: "Bash", concurrent: true });
+
+  it("a concurrent decision is cancelled by newer activity on the session (answered in the host)", async () => {
+    const { id } = concurrentPermission();
     const waiting = store.wait(id as string, 60_000);
     // Waiting for input again is the permission prompt's own notification, not an answer.
     store.handleSessionChange({
@@ -274,16 +277,28 @@ describe("DecisionStore", () => {
     store.handleSessionChange({ type: "upsert", session: sessionAt(8_000, "working"), previousStatus: null });
     await expect(waiting).resolves.toEqual({ type: "gone" });
     expect(store.list()).toEqual([]);
+    expect(store.debugLog().at(-1)?.end).toBe("cancelled_by_agent_event");
   });
 
-  it("is cancelled by a finished turn and by the session ending", async () => {
+  it("a blocking decision is not cancelled by session events, only by the session ending", async () => {
     const a = permission().id as string;
+    const waiting = store.wait(a, 60_000);
+    store.handleSessionChange({ type: "upsert", session: sessionAt(8_000, "working"), previousStatus: null });
+    store.handleSessionChange({ type: "upsert", session: sessionAt(9_000, "done"), previousStatus: null });
+    expect(store.list()).toHaveLength(1);
+    expect(store.hasBlockingFor("claude-code:s1")).toBe(true);
+
+    store.handleSessionChange({ type: "remove", key: "claude-code:s1" });
+    await expect(waiting).resolves.toEqual({ type: "gone" });
+    expect(store.debugLog().at(-1)?.end).toBe("session_end");
+    expect(store.hasBlockingFor("claude-code:s1")).toBe(false);
+  });
+
+  it("a concurrent decision is cancelled by a finished turn", async () => {
+    const a = concurrentPermission().id as string;
     store.handleSessionChange({ type: "upsert", session: sessionAt(8_000, "done"), previousStatus: null });
     await expect(store.wait(a, 10)).resolves.toEqual({ type: "gone" });
-
-    const b = permission().id as string;
-    store.handleSessionChange({ type: "remove", key: "claude-code:s1" });
-    await expect(store.wait(b, 10)).resolves.toEqual({ type: "gone" });
+    expect(store.hasBlockingFor("claude-code:s1")).toBe(false);
   });
 
   it("cancels a decision nobody ever starts waiting for, and one whose waiter went away", async () => {

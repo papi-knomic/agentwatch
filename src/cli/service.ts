@@ -8,6 +8,7 @@ import {
   configFileExists,
   ensureConfig,
   readConfig,
+  setBackgroundHold,
   setRemoteActionsFlag,
 } from "../core/config.js";
 import { APP_DISPLAY_NAME, APP_NAME, PACKAGE_NAME } from "../core/constants.js";
@@ -57,6 +58,11 @@ export function setupService(config: Config, cliPath: string) {
     saveRemoteActions: async (enabled) => {
       await setRemoteActionsFlag(enabled);
       // false also means "already that value", so the missing file is checked separately.
+      if (!(await configFileExists()))
+        throw new Error("The config file is missing, so the setting could not be saved.");
+    },
+    saveBackgroundHold: async (mode) => {
+      await setBackgroundHold(mode);
       if (!(await configFileExists()))
         throw new Error("The config file is missing, so the setting could not be saved.");
     },

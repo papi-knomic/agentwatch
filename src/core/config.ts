@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { DEFAULT_PORT } from "./constants.js";
+import { BACKGROUND_HOLDS, type BackgroundHold, DEFAULT_BACKGROUND_HOLD } from "./decision-types.js";
 import { readTextIfExists, writeFileAtomic } from "./fs.js";
 import { configPath } from "./paths.js";
 import { defaultPhoneConfig, type PhoneConfig, parsePhone } from "./phone.js";
@@ -72,6 +73,8 @@ export interface Config {
    * (`agentwatch install --tool claude-code --remote-actions`). Off by default.
    */
   remoteActions?: boolean;
+  /** Blocking prompts while the dashboard is only open in the background; see BACKGROUND_HOLDS. Default "full". */
+  remoteActionsBackgroundHold?: BackgroundHold;
   /**
    * Opt-in phone access through a user-run HTTPS proxy (Tailscale Serve). The server still listens on 127.0.0.1 only;
    * requests whose Host is one of `hosts` are "remote" and need a paired-device cookie. Off by default.
@@ -145,6 +148,11 @@ export function parseConfig(value: unknown, toolDefaults: Record<string, ToolSet
     notifications: bool(value.notifications, true),
     taskTitles: bool(value.taskTitles, true),
     remoteActions: bool(value.remoteActions, false),
+    remoteActionsBackgroundHold: pick(
+      BACKGROUND_HOLDS,
+      value.remoteActionsBackgroundHold,
+      DEFAULT_BACKGROUND_HOLD,
+    ),
     remote: parseRemote(value.remote),
     phone: parsePhone(value.phone),
     tools,
@@ -225,6 +233,14 @@ export function setRemoteActionsFlag(
   return setConfigKey("remoteActions", enabled, env, true);
 }
 
+/** Sets only `remoteActionsBackgroundHold` in the file on disk. Returns false when there is no config file. */
+export function setBackgroundHold(
+  mode: BackgroundHold,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  return setConfigKey("remoteActionsBackgroundHold", mode, env, true);
+}
+
 /** Sets only `remote` in the file on disk. Returns false when there is no config file. */
 export function setRemoteConfig(
   remote: RemoteConfig,
@@ -263,6 +279,7 @@ export async function ensureConfig(
     notifications: true,
     taskTitles: true,
     remoteActions: false,
+    remoteActionsBackgroundHold: DEFAULT_BACKGROUND_HOLD,
     remote: { enabled: false, hosts: [] },
     phone: defaultPhoneConfig(),
     tools: { ...toolDefaults },

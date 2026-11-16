@@ -235,10 +235,10 @@ export function RemoteActionsRow({
           {!on && (
             <p>
               While a visible tab of this page is open, Claude Code's questions wait here for up to about 100
-              seconds instead of showing in the terminal (permission prompts may too). If the tab is hidden it
-              waits about 15 seconds, and with no dashboard tab open the terminal asks as usual. Any program
-              on this computer can approve commands through this page, so don't turn this on on a shared
-              computer. The command shown here stays in memory only.
+              seconds instead of showing in the terminal (permission prompts may too). What happens when the
+              tab is hidden is a setting in Settings, Answering tab,, and with no dashboard tab open the
+              terminal asks as usual. Any program on this computer can approve commands through this page, so
+              don't turn this on on a shared computer. The command shown here stays in memory only.
             </p>
           )}
           <div className="setup-buttons">

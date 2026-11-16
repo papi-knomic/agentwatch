@@ -71,21 +71,29 @@ Output (stdout, exit 0), from the [hooks docs](https://code.claude.com/docs/en/h
 **Waiting replaces the terminal prompt.** `PreToolUse` runs before the tool, so Claude Code's own question UI does not
 appear until `decide` returns: while a visible dashboard tab is open, the question waits for the dashboard (it is NOT
 shown in the terminal meanwhile) for up to about 100 s. If the dashboard is open but only in the background (Chrome
-reports a covered or minimized window as hidden too), the prompt is held 15 s and then Claude Code asks in the
-terminal; the dashboard's "Waiting for you" area, tab title, favicon badge and optional browser notification are there
-to pull you over in that time, and a tab becoming visible extends the hold. With no dashboard connected, no wait at
-all. `PermissionRequest` may behave the same; that is not verified (third-party reports say the dialog stays, but
+reports a covered or minimized window as hidden too), the config key `remoteActionsBackgroundHold` (Settings,
+Answering tab) decides: `full` (default) keeps the full 100 s, `short` holds 15 s and then Claude Code asks in the
+terminal (a tab becoming visible extends the hold), `off` only holds while a tab is visible and hands the prompt
+back about 2 s after the last visible tab hides. The dashboard's "Waiting for you" area, tab title, favicon badge and
+optional browser notification are there to pull you over. With no dashboard connected, no wait at all, in every mode. `PermissionRequest` may behave the same; that is not verified (third-party reports say the dialog stays, but
 don't rely on it). The dashboard reports `document.visibilityState` to `POST /api/presence`; an open event stream is
 what counts as connected. Not supported through hooks: sending new prompts or starting plans (only Claude Code Channels,
 a research preview, can do that). Free-text "Other" answers aren't offered. Codex's `PermissionRequest` uses the same
 format (future work); Grok hooks can only deny, so Grok is unsupported.
 
-Known gaps of the decision cancel: a pending decision is cancelled when the same agent reports a newer event that is not
-`needs_input` (more than 1.5 s after the request, by event time), or the main agent's turn ends. That is deliberately
-fail-safe, since a terminal answer is only visible as later activity, but it can still withdraw a card because of
-unrelated activity of that agent (a background task finishing). Other subagents' events don't count. If the regular
+Cancel rules. A blocking decision (terminal CLI, every question) is never cancelled by session events: while `decide`
+waits, Claude Code shows no prompt of its own, so nothing else can have answered it, and events from other agents,
+the main agent, Notification hooks or the approval watcher are about something else. It ends only by an answer, its
+`decide` wait detaching (Esc or an interrupt in Claude Code kills the hook; the card is withdrawn after about 3 s),
+session end, expiry, or the viewer rules above. `src/server/approval-watch.ts` also skips sessions with a pending
+blocking decision and ignores shells whose command line is our own `hook --tool` / `decide --tool`. Concurrent
+decisions (VS Code, Claude app) keep the event rule: a newer non-`needs_input` event from the same agent (more than
+1.5 s after the request, by event time), or the main agent's turn ending, withdraws the card, since the user may have
+answered in the host; that is fail-safe and can withdraw a card for unrelated activity of that agent. If the regular
 hook hasn't told the server about the session yet, `decide` retries registration once after 300 ms. The terminal prompt
-is unaffected; only the dashboard card is lost.
+is unaffected; only the dashboard card is lost. `agentwatch debug decisions` records which rule ended each decision
+(`resolved_allow`, `orphan`, `session_end`, `expired_full`, `no_viewer_cancel`, `hidden_cancel`,
+`cancelled_by_agent_event`, ...).
 
 **Concurrent hosts (VS Code extension, Claude desktop app).** Docs (https://code.claude.com/docs/en/hooks, PermissionRequest):
 "For a call that reaches a `--permission-prompt-tool` or the Agent SDK's `canUseTool` callback, the hooks run alongside

@@ -463,6 +463,10 @@ describe("remote writes", () => {
     expect(
       (await send("POST", "/api/setup/remote-actions", { headers: h, body: { enabled: false } })).status,
     ).toBe(403);
+    expect(
+      (await send("POST", "/api/setup/remote-actions", { headers: h, body: { backgroundHold: "off" } }))
+        .status,
+    ).toBe(403);
     expect((await send("POST", "/api/sessions/open", { headers: h, body: { key: "x" } })).status).toBe(403);
     // Still paired afterwards.
     expect(

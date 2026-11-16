@@ -1823,3 +1823,21 @@ button {
     margin-bottom: 10px;
   }
 }
+
+.settings-choice {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+  font-size: 13px;
+}
+
+.settings-choice legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.settings-choice label {
+  display: block;
+  margin-bottom: 4px;
+}

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   configFileExists,
   parseConfig,
+  setBackgroundHold,
   setPhoneConfig,
   setRemoteActionsFlag,
   setRemoteConfig,
@@ -18,6 +19,37 @@ describe("parseConfig remoteActions", () => {
     expect(parseConfig({ token: TOKEN, remoteActions: "yes" }, {})?.remoteActions).toBe(false);
     expect(parseConfig({ token: TOKEN, remoteActions: 1 }, {})?.remoteActions).toBe(false);
     expect(parseConfig({ token: TOKEN, remoteActions: true }, {})?.remoteActions).toBe(true);
+  });
+});
+
+describe("parseConfig remoteActionsBackgroundHold", () => {
+  it("defaults to full and accepts only the known modes", () => {
+    const hold = (value?: unknown) =>
+      parseConfig({ token: TOKEN, remoteActionsBackgroundHold: value }, {})?.remoteActionsBackgroundHold;
+    expect(parseConfig({ token: TOKEN }, {})?.remoteActionsBackgroundHold).toBe("full");
+    for (const mode of ["full", "short", "off"]) expect(hold(mode)).toBe(mode);
+    for (const bad of ["fast", "", 1, true, null, ["off"]]) expect(hold(bad)).toBe("full");
+  });
+});
+
+describe("setBackgroundHold", () => {
+  it("changes only that key, serialized with other saves", async () => {
+    const home = await mkdtemp(join(tmpdir(), "aw-config-"));
+    const env = { AGENTWATCH_HOME: home };
+    const file = join(home, "config.json");
+    await writeFile(file, JSON.stringify({ token: TOKEN, custom: 1, remoteActions: true }));
+    expect(await Promise.all([setBackgroundHold("off", env), setRemoteActionsFlag(false, env)])).toEqual([
+      true,
+      true,
+    ]);
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      token: TOKEN,
+      custom: 1,
+      remoteActions: false,
+      remoteActionsBackgroundHold: "off",
+    });
+    expect(await setBackgroundHold("off", env)).toBe(false);
+    await rm(home, { recursive: true, force: true });
   });
 });
 

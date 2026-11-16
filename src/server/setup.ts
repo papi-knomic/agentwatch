@@ -1,6 +1,7 @@
 import type { Adapter, InstallResult } from "../adapters/types.js";
 import type { Config } from "../core/config.js";
 import { APP_NAME } from "../core/constants.js";
+import { type BackgroundHold, DEFAULT_BACKGROUND_HOLD } from "../core/decision-types.js";
 
 /** Whether each tool is connected, and how to connect it: shown on the landing page and by `status`. */
 
@@ -28,6 +29,8 @@ export interface RemoteActionsState {
   installed: boolean;
   /** Tools that have it, by display name. */
   tools: string[];
+  /** What blocking terminal prompts do while the dashboard is only open in the background. */
+  backgroundHold: BackgroundHold;
 }
 
 export interface SetupState {
@@ -56,6 +59,8 @@ export interface SetupService {
     enabled: boolean,
     dryRun: boolean,
   ): Promise<{ results: ConnectResult[]; setup: SetupState }>;
+  /** Saves and applies the background-hold mode (no hooks change). */
+  setBackgroundHold(mode: BackgroundHold): Promise<SetupState>;
 }
 
 export interface SetupDeps {
@@ -67,6 +72,8 @@ export interface SetupDeps {
   decideCommandFor?: (toolId: string) => string;
   /** Persists the remote actions flag (and nothing else) after it is switched. */
   saveRemoteActions?: (enabled: boolean) => Promise<void>;
+  /** Persists the background-hold mode (and nothing else). */
+  saveBackgroundHold?: (mode: BackgroundHold) => Promise<void>;
   autostartInstalled?: () => Promise<boolean>;
   /** Extra one-time setup shared by all tools (e.g. the Windows notification identity). */
   afterConnect?: (dryRun: boolean) => Promise<void>;
@@ -104,6 +111,7 @@ export function createSetupService(deps: SetupDeps): SetupService {
       enabled: deps.config.remoteActions === true,
       installed: previews.length > 0 && previews.every(Boolean),
       tools: tools.map((a) => a.meta.displayName),
+      backgroundHold: deps.config.remoteActionsBackgroundHold ?? DEFAULT_BACKGROUND_HOLD,
     };
   }
 
@@ -184,5 +192,12 @@ export function createSetupService(deps: SetupDeps): SetupService {
     return { results, setup: await status() };
   }
 
-  return { status, connect, setRemoteActions };
+  async function setBackgroundHold(mode: BackgroundHold) {
+    if (!deps.saveBackgroundHold) throw new UnknownToolError("This setting isn't available");
+    await deps.saveBackgroundHold(mode);
+    deps.config.remoteActionsBackgroundHold = mode;
+    return status();
+  }
+
+  return { status, connect, setRemoteActions, setBackgroundHold };
 }

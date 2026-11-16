@@ -161,7 +161,7 @@ describe("agent ids from untrusted input", () => {
   });
 });
 
-describe("decisions follow the agent that asked", () => {
+describe("concurrent decisions follow the agent that asked", () => {
   function setup() {
     let clock = T0;
     const sessions = new SessionStore();
@@ -176,6 +176,7 @@ describe("decisions follow the agent that asked", () => {
         toolName: "Write",
         agentId,
         agentType: agentId ? "general-purpose" : undefined,
+        concurrent: true,
       }).id as string;
     };
     return { sessions, decisions, ask };
@@ -236,5 +237,41 @@ describe("decisions follow the agent that asked", () => {
     ask(1, "agentA");
     sessions.apply(event(10, { status: "ended" }));
     expect(decisions.list()).toEqual([]);
+  });
+});
+
+describe("blocking decisions are not cancelled by session events", () => {
+  function setup() {
+    let clock = T0;
+    const sessions = new SessionStore();
+    const decisions = new DecisionStore({ now: () => clock, orphanMs: 10 * 60_000 });
+    sessions.subscribe((change) => decisions.handleSessionChange(change));
+    const ask = (seconds: number, agentId?: string) => {
+      clock = T0 + seconds * 1000;
+      sessions.apply(waits(seconds, agentId));
+      return decisions.create({ sessionKey: KEY, kind: "permission", toolName: "Write", agentId })
+        .id as string;
+    };
+    return { sessions, decisions, ask };
+  }
+
+  it("survives other-agent, main-agent, Notification, working and turn-end events", () => {
+    const { sessions, decisions, ask } = setup();
+    const a = ask(1, "agentA");
+    sessions.apply(event(10, { agentId: "agentB", message: "Edit" }));
+    sessions.apply(event(11, { message: "Bash" }));
+    sessions.apply(event(12, { agentId: "agentA", message: "Write" }));
+    sessions.apply(waits(13, "agentB"));
+    sessions.apply(event(14, { status: "working", inputPending: false }));
+    sessions.apply(event(15, { status: "done" }));
+    expect(decisions.list().map((d) => d.id)).toEqual([a]);
+  });
+
+  it("still ends with the session", () => {
+    const { sessions, decisions, ask } = setup();
+    ask(1);
+    sessions.apply(event(10, { status: "ended" }));
+    expect(decisions.list()).toEqual([]);
+    expect(decisions.debugLog().at(-1)?.end).toBe("session_end");
   });
 });

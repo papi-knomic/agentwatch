@@ -7,6 +7,7 @@ import { SessionStore } from "../core/store.js";
 import { createNotifier } from "../notify/index.js";
 import { createPhoneNotifier } from "../notify/ntfy.js";
 import { createApprovalWatcher } from "../server/approval-watch.js";
+import { DecisionStore } from "../server/decisions.js";
 import { DeviceStore } from "../server/devices.js";
 import { createNotificationDispatcher } from "../server/notifications.js";
 import { createSessionOpener } from "../server/open-session.js";
@@ -75,8 +76,11 @@ export async function start(options: {
   );
   setInterval(() => store.pruneStale(), PRUNE_INTERVAL_MS).unref();
   createSessionHealth({ store }).start();
+  // Shared with the server: the watcher must know which sessions are held at a dashboard prompt.
+  const decisions = new DecisionStore();
   createApprovalWatcher({
     store,
+    isHeld: (key) => decisions.hasBlockingFor(key),
     listChildren: defaultListChildren(),
     log: (message) => console.error(message),
   }).start();
@@ -89,6 +93,7 @@ export async function start(options: {
   const devices = new DeviceStore(devicesPath());
   await devices.load();
   const server = createAppServer({
+    decisions,
     devices,
     detectHost: detectTailscaleHost,
     serve: createServeController(),
