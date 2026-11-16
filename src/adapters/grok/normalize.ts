@@ -1,4 +1,10 @@
-import { type AgentEvent, type AgentStatus, titleFromPrompt, truncateMessage } from "../../core/types.js";
+import {
+  type AgentEvent,
+  type AgentStatus,
+  titleFromPrompt,
+  truncateMessage,
+  UNATTRIBUTED_AGENT_ID,
+} from "../../core/types.js";
 import { detectHost } from "../shared/host.js";
 import { toolActivity } from "../shared/tool-name.js";
 import type { NormalizeContext } from "../types.js";
@@ -85,6 +91,15 @@ function statusFor(event: string | undefined, raw: Record<string, unknown>): Map
   }
 }
 
+/**
+ * Grok's embedded docs say hooks that fire inside a subagent carry `subagentType` (not in the public docs page, and
+ * not captured by us: unverified). No stable subagent id is documented, so such events can't be attributed to one
+ * agent; they must not move the parent's status either (a subagent's `Stop` would mark the whole session done).
+ */
+function isSubagentPayload(raw: Record<string, unknown>): boolean {
+  return field(raw, "subagentType", "subagent_type") !== undefined;
+}
+
 export function normalizeGrok(raw: unknown, ctx: NormalizeContext): AgentEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
   const record = raw as Record<string, unknown>;
@@ -94,6 +109,10 @@ export function normalizeGrok(raw: unknown, ctx: NormalizeContext): AgentEvent |
 
   const mapped = statusFor(grokEventName(record, ctx.env), record);
   if (!mapped) return null;
+  const fromSubagent = isSubagentPayload(record);
+  // The one thing worth keeping from a subagent: it is blocked on the user. Without an id it is "somebody", which the
+  // store clears on the next activity from anyone. Everything else about a subagent is dropped.
+  if (fromSubagent && mapped.status !== "needs_input") return null;
 
   const event: AgentEvent = {
     tool: grokMeta.id,
@@ -103,6 +122,7 @@ export function normalizeGrok(raw: unknown, ctx: NormalizeContext): AgentEvent |
     timestamp: ctx.now.toISOString(),
   };
   if (grokEventName(record, ctx.env) === "UserPromptSubmit") event.inputPending = false;
+  if (fromSubagent) event.agentId = UNATTRIBUTED_AGENT_ID;
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
   if (mapped.title) event.title = mapped.title;

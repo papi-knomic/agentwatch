@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { normalizeOpenCode } from "./normalize.js";
+import { SessionStore } from "../../core/store.js";
+import type { AgentEvent } from "../../core/types.js";
+import { normalizeOpenCode, openCodeRequestRef } from "./normalize.js";
 
 interface BusEvent {
   type: string;
@@ -54,6 +56,8 @@ describe("normalizeOpenCode", () => {
     "session-created.json",
     "session-updated-title.json",
     "session-error-aborted.json",
+    "message-updated-user.json",
+    "message-part-updated-user-text.json",
   ])("ignores %s", (file) => {
     expect(normalizeOpenCode(envelope(file), ctx)).toBeNull();
   });
@@ -95,6 +99,67 @@ describe("normalizeOpenCode", () => {
     ).toMatchObject({ status: "idle", message: "Interrupted" });
   });
 
+  it("names a session from its first prompt while OpenCode has only the placeholder", () => {
+    const placeholder = "New session - 2026-10-20T00:56:10.149Z";
+    const prompt = "Add the word world to hello.txt";
+    const fromPrompt = normalizeOpenCode(
+      envelope("session-status-busy.json", { title: placeholder, prompt }),
+      ctx,
+    );
+    expect(fromPrompt?.title).toBe(prompt);
+    // Prompt-derived: no titleSource, so a later tool title can replace it in the store.
+    expect(fromPrompt?.titleSource).toBeUndefined();
+    expect(normalizeOpenCode(envelope("session-status-busy.json", { prompt }), ctx)?.title).toBe(prompt);
+    expect(
+      normalizeOpenCode(envelope("session-status-busy.json", { prompt: "\n  \nsecond line\nthird" }), ctx)
+        ?.title,
+    ).toBe("second line");
+    expect(
+      normalizeOpenCode(envelope("session-status-busy.json", { prompt: "y".repeat(300) }), ctx)?.title
+        ?.length,
+    ).toBeLessThanOrEqual(80);
+  });
+
+  it("prefers OpenCode's real title over the prompt", () => {
+    const event = normalizeOpenCode(
+      envelope("session-status-busy.json", { title: "Add word to hello.txt", prompt: "Add the word world" }),
+      ctx,
+    );
+    expect(event).toMatchObject({ title: "Add word to hello.txt", titleSource: "tool" });
+  });
+
+  it("replaces the prompt title once OpenCode's own title arrives, in the store", () => {
+    const store = new SessionStore();
+    const first = normalizeOpenCode(
+      envelope("session-status-busy.json", {
+        title: "New session - 2026-10-20T00:56:10.149Z",
+        prompt: "Add world",
+      }),
+      ctx,
+    );
+    store.apply(first as AgentEvent);
+    expect(store.list()[0]?.title).toBe("Add world");
+    const later = normalizeOpenCode(
+      envelope("session-idle.json", {
+        title: "Add word to hello.txt",
+        prompt: "Add world",
+        at: "2026-10-20T00:56:30.000Z",
+      }),
+      ctx,
+    );
+    store.apply(later as AgentEvent);
+    expect(store.list()[0]).toMatchObject({ title: "Add word to hello.txt", titleSource: "tool" });
+  });
+
+  it("has no title when there is neither a real title nor a prompt", () => {
+    expect(
+      normalizeOpenCode(
+        envelope("session-status-busy.json", { title: "New session - 2026-10-20T00:56:10.149Z" }),
+        ctx,
+      )?.title,
+    ).toBeUndefined();
+  });
+
   it("uses OpenCode's own session title, but not its placeholder", () => {
     const named = normalizeOpenCode(
       envelope("session-status-busy.json", { title: 'Adding "world" to hello.txt' }),
@@ -119,6 +184,63 @@ describe("normalizeOpenCode", () => {
     expect(normalizeOpenCode(envelope("session-status-busy.json", root), ctx)).toBeNull();
     expect(normalizeOpenCode(envelope("session-idle.json", root), ctx)).toBeNull();
     expect(normalizeOpenCode(envelope("session-deleted.json", root), ctx)).toBeNull();
+  });
+
+  it("tags a subagent's prompts with the child's session id, and leaves the root's alone", () => {
+    const root = { rootSessionID: "ses_parent" };
+    const asked = normalizeOpenCode(envelope("permission-asked-bash.json", root), ctx);
+    expect(asked?.agentId).toBe("ses_ea930fb5affekKS0B120gDMDYx");
+    expect(normalizeOpenCode(envelope("question-replied.json", root), ctx)?.agentId).toBe(
+      "ses_ea930fb5affekKS0B120gDMDYx",
+    );
+    expect(normalizeOpenCode(envelope("permission-asked-bash.json"), ctx)?.agentId).toBeUndefined();
+    // Request ids are not part of the shared format.
+    expect(JSON.stringify(asked)).not.toContain("per_156cf6b46001QW30zstIuMk7lZ");
+  });
+
+  it("keeps two subagents' waits apart in the store", () => {
+    const store = new SessionStore();
+    const send = (name: string, child: string, iso: string) => {
+      const raw = envelope(name, { rootSessionID: "ses_parent" }) as {
+        event: { properties: { sessionID: string } };
+      };
+      raw.event.properties.sessionID = child;
+      const event = normalizeOpenCode({ ...raw, at: iso }, ctx);
+      if (event) store.apply(event);
+    };
+    store.apply({
+      tool: "opencode",
+      sessionId: "ses_parent",
+      cwd: "C:\\p",
+      status: "working",
+      timestamp: "2026-10-16T11:59:00.000Z",
+    });
+    send("permission-asked-bash.json", "ses_childA", "2026-10-16T12:00:00.000Z");
+    send("permission-asked-bash.json", "ses_childB", "2026-10-16T12:00:05.000Z");
+    expect(store.list()[0]?.status).toBe("needs_input");
+    send("permission-replied-once.json", "ses_childA", "2026-10-16T12:00:10.000Z");
+    expect(store.list()[0]?.status).toBe("needs_input"); // B is still waiting
+    send("permission-replied-once.json", "ses_childB", "2026-10-16T12:00:15.000Z");
+    expect(store.list()[0]?.status).toBe("working");
+  });
+
+  it("names the request a future answer must address, for the child that asked", () => {
+    expect(
+      openCodeRequestRef(envelope("permission-asked-bash.json", { rootSessionID: "ses_parent" })),
+    ).toEqual({
+      kind: "permission",
+      sessionId: "ses_ea930fb5affekKS0B120gDMDYx",
+      requestId: "per_156cf6b46001QW30zstIuMk7lZ",
+    });
+    expect(openCodeRequestRef(envelope("question-asked.json"))).toMatchObject({
+      kind: "question",
+      requestId: "que_156cfb128001syZq1r42zevPk2",
+    });
+    expect(openCodeRequestRef(envelopeV2("form-created.json"))).toMatchObject({
+      kind: "question",
+      requestId: "frm_1bfabdb4a001ao3P8fbhxlq1qP",
+    });
+    expect(openCodeRequestRef(envelope("permission-replied-once.json"))).toBeNull();
   });
 
   it("falls back to the hook's clock and OPENCODE_PID", () => {
@@ -181,6 +303,7 @@ describe("normalizeOpenCode, OpenCode 2.x", () => {
     "session-status-idle.json",
     "session-created.json",
     "session-renamed.json",
+    "session-inbox-enqueued-user.json",
     "session-execution-interrupted-superseded.json",
     "form-created-global.json",
   ])("ignores %s", (file) => {

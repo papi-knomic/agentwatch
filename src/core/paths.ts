@@ -33,3 +33,7 @@ export function sessionsPath(env: NodeJS.ProcessEnv = process.env): string {
 export function serverLogPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(appHome(env), "server.log");
 }
+
+export function devicesPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(appHome(env), "devices.json");
+}

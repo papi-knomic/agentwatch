@@ -1,0 +1,15 @@
+{
+  "id": "evt_1e409bcd2001lt72KjMsH3UPpj",
+  "type": "message.part.updated",
+  "properties": {
+    "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+    "part": {
+      "type": "text",
+      "text": "Add the word world to hello.txt\nthen run the tests",
+      "messageID": "msg_1e409bcc000111Rg2sIfpBIfDX",
+      "sessionID": "ses_ea930fb5affekKS0B120gDMDYx",
+      "id": "prt_1e409bcca001acEg9lau6t4iaT"
+    },
+    "time": 1794827205842
+  }
+}

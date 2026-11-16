@@ -4,7 +4,7 @@ import { APP_NAME } from "../../core/constants.js";
 import { readTextIfExists, writeFileAtomic } from "../../core/fs.js";
 import type { InstallOptions, InstallResult } from "../types.js";
 import { openCodeMeta } from "./meta.js";
-import { PLUGIN_MARKER, pluginSource } from "./plugin.js";
+import { DECIDE_ENABLED_LINE, PLUGIN_MARKER, pluginSource } from "./plugin.js";
 
 /**
  * OpenCode loads every `{plugin,plugins}/*.{js,ts}` in its config folder, which is `$XDG_CONFIG_HOME/opencode`
@@ -26,13 +26,20 @@ export async function installOpenCode(options: InstallOptions): Promise<InstallR
       `${configPath} exists but wasn't written by ${APP_NAME}. It was left untouched; rename it and try again.`,
     );
   }
-  const source = pluginSource(options.hookCommand);
+  // An install without the flag keeps whatever an earlier one chose (like the other tools' decide hooks).
+  const decide = options.remoteActions ?? existing?.includes(DECIDE_ENABLED_LINE) === true;
+  const source = pluginSource(options.hookCommand, {
+    decide,
+    ...(options.decideCommand ? { decideCommand: options.decideCommand } : {}),
+  });
   if (existing === source) return { configPath, changed: false, summary: [] };
   if (!options.dryRun) await writeFileAtomic(configPath, source);
   return {
     configPath,
     changed: true,
-    summary: [`${existing === null ? "Add" : "Update"} the ${openCodeMeta.displayName} plugin ${configPath}`],
+    summary: [
+      `${existing === null ? "Add" : "Update"} the ${openCodeMeta.displayName} plugin ${configPath}${decide ? " (with answering from the dashboard)" : ""}`,
+    ],
     notes: openCodeMeta.afterInstall ?? [],
   };
 }

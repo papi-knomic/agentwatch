@@ -6,4 +6,5 @@ export const claudeCodeMeta: AdapterMeta = {
   color: "#d97757",
   sound: "default",
   docsUrl: "https://code.claude.com/docs/en/hooks",
+  remoteActions: true,
 };

@@ -127,4 +127,56 @@ describe("detectClaudeHost", () => {
     expect(detectClaudeHost({ CLAUDE_CODE_ENTRYPOINT: "cli" })).toBe("Terminal");
     expect(detectClaudeHost({})).toBeUndefined();
   });
+
+  it("detects the Claude desktop app before any terminal fallback", () => {
+    expect(detectClaudeHost({ CLAUDE_CODE_ENTRYPOINT: "claude-desktop" })).toBe("Claude Desktop");
+    expect(detectClaudeHost({ CLAUDE_CODE_ENTRYPOINT: "claude-desktop-3p", WT_SESSION: "abc" })).toBe(
+      "Claude Desktop",
+    );
+  });
+});
+
+describe("subagents (verified by capture, Claude Code 2.1.301)", () => {
+  it("attributes a subagent's PermissionRequest to it, with the tool name only", () => {
+    const event = normalizeClaudeCode(fixture("subagent-permission-request.json"), ctx);
+    expect(event).toMatchObject({
+      status: "needs_input",
+      agentId: "a0dcb4961017438ab",
+      message: "Claude needs your permission to use Write",
+    });
+    // The file path and contents are never carried.
+    expect(JSON.stringify(event)).not.toMatch(/a\.txt|"x"/);
+  });
+
+  it("a main-agent PermissionRequest carries no agent id", () => {
+    const event = normalizeClaudeCode(fixture("permission-request.json"), ctx);
+    expect(event).toMatchObject({ status: "needs_input" });
+    expect(event?.agentId).toBeUndefined();
+    expect(event?.message).not.toContain("npm test");
+  });
+
+  it("attributes a subagent's PostToolUse, and ends a subagent on SubagentStop", () => {
+    expect(normalizeClaudeCode(fixture("subagent-post-tool-use.json"), ctx)).toMatchObject({
+      status: "working",
+      agentId: "abc266ed9ab6d4c5b",
+      message: "Bash",
+    });
+    expect(normalizeClaudeCode(fixture("subagent-stop.json"), ctx)).toMatchObject({
+      status: "done",
+      agentId: "a0dcb4961017438ab",
+    });
+  });
+
+  it("marks a Notification without an agent id as unattributed, and keeps one that has an id", () => {
+    expect(normalizeClaudeCode(fixture("notification-permission.json"), ctx)?.agentId).toBe("unattributed");
+    const withId = { ...(fixture("notification-permission.json") as object), agent_id: "a0dcb4961017438ab" };
+    expect(normalizeClaudeCode(withId, ctx)?.agentId).toBe("a0dcb4961017438ab");
+  });
+
+  it("ignores a SubagentStop without an id and a malformed agent id", () => {
+    const stop = { ...(fixture("subagent-stop.json") as object), agent_id: undefined };
+    expect(normalizeClaudeCode(stop, ctx)).toBeNull();
+    const bad = { ...(fixture("subagent-post-tool-use.json") as object), agent_id: "../etc" };
+    expect(normalizeClaudeCode(bad, ctx)?.agentId).toBeUndefined();
+  });
 });

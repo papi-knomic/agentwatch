@@ -20,6 +20,15 @@ describe("parsers", () => {
     expect(parseWindowsList("[]")).toEqual([]);
   });
 
+  it("copes with control and line-separator characters in a command line", () => {
+    // PowerShell can leave U+2028 raw inside a string, and a raw control character makes JSON.parse throw.
+    const raw =
+      '{"pid":5,"ppid":1,"name":"cmd.exe","cmd":"echo a\u2028b\u0007c\u000bd","created":"2026-10-16T12:00:00.0000000Z"}';
+    const [item] = parseWindowsList(raw);
+    expect(item?.pid).toBe(5);
+    expect(item?.command).toContain("echo a");
+  });
+
   it("parses ps elapsed times", () => {
     expect(parseElapsed("00:05")).toBe(5);
     expect(parseElapsed("01:02:03")).toBe(3723);

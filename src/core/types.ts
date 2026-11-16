@@ -37,6 +37,13 @@ export interface AgentEvent {
   pid?: number;
   /** An outstanding question; background work must not clear it before the user's reply. */
   inputPending?: boolean;
+  /**
+   * Which agent inside the session the event is about, when the tool can tell (Claude Code subagents share the
+   * session id). Absent: the main agent. Used only to track who is waiting; never stored in the session file.
+   * `UNATTRIBUTED_AGENT_ID` marks a needs_input signal that can't say which agent it came from. A subagent's
+   * `done` means that subagent finished, not the session.
+   */
+  agentId?: string;
   /** Internal helper sessions are retained for filtering later events, but never displayed or notified. */
   hidden?: boolean;
   timestamp: string;
@@ -68,6 +75,17 @@ export interface Session {
   previousActivityAt?: string;
   /** Working, but no event for a long time: maybe stuck, maybe a very long command. Cleared by any event. */
   stalled?: boolean;
+}
+
+/** Pending input is tracked per agent; events without an `agentId` belong to this one. */
+export const MAIN_AGENT_KEY = "main";
+/** A needs_input signal from an agent we can't identify (e.g. a Notification); any later activity clears it. */
+export const UNATTRIBUTED_AGENT_ID = "unattributed";
+const AGENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** An agent id from untrusted input, or undefined. */
+export function parseAgentId(value: unknown): string | undefined {
+  return typeof value === "string" && AGENT_ID.test(value) ? value : undefined;
 }
 
 export function sessionKey(tool: string, sessionId: string): string {
@@ -163,6 +181,8 @@ export function parseAgentEvent(value: unknown): AgentEvent | null {
   if (pid) event.pid = pid;
   if (typeof value.inputPending === "boolean") event.inputPending = value.inputPending;
   if (value.hidden === true) event.hidden = true;
+  const agentId = parseAgentId(value.agentId);
+  if (agentId) event.agentId = agentId;
   const host = nonEmptyString(value.host, 64);
   if (host) event.host = host;
   return event;

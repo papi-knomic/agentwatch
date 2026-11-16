@@ -1,4 +1,10 @@
-import { type AgentEvent, type AgentStatus, parsePid, truncateTitle } from "../../core/types.js";
+import {
+  type AgentEvent,
+  type AgentStatus,
+  parseAgentId,
+  parsePid,
+  truncateTitle,
+} from "../../core/types.js";
 import { detectHost } from "../shared/host.js";
 import type { NormalizeContext } from "../types.js";
 import { openCodeMeta } from "./meta.js";
@@ -142,6 +148,45 @@ function timestampOf(value: unknown, now: Date): string {
   return Number.isNaN(time) ? now.toISOString() : new Date(time).toISOString();
 }
 
+/** The OpenCode objects a future "answer from the dashboard" feature has to address: not part of AgentEvent. */
+export interface OpenCodeRequestRef {
+  kind: "permission" | "question";
+  /** The session that asked: the child's own id for a subagent (the event itself reports the root session). */
+  sessionId: string;
+  /** Id of the permission request / question / form to reply to (`per_…`, `que_…`, `frm_…`). */
+  requestId: string;
+}
+
+/**
+ * For an "asked" envelope (permission.asked, permission.updated, question.asked, form.created), the exact request
+ * to reply to, or null. Deliberately separate from `normalizeOpenCode`: AgentEvent carries only `agentId` (the
+ * child's session id), and request ids are never stored (AGENTS.md hard rule 4). The plugin runs inside OpenCode
+ * and sees the same envelope, so it can call this before cutting the event down and keep the ref in memory only.
+ */
+export function openCodeRequestRef(raw: unknown): OpenCodeRequestRef | null {
+  if (!isRecord(raw) || !isRecord(raw.event)) return null;
+  const v = raw.v === 2 ? 2 : 1;
+  const type = str(raw.event.type);
+  const body = v === 2 ? raw.event.data : raw.event.properties;
+  const fields = isRecord(body) ? body : {};
+  if (!type) return null;
+  const sessionId = sessionIdOf(v, type, fields);
+  if (!sessionId || sessionId === "global") return null;
+  if (type === "permission.asked" || type === "permission.updated") {
+    const requestId = str(fields.id);
+    return requestId ? { kind: "permission", sessionId, requestId } : null;
+  }
+  if (type === "question.asked") {
+    const requestId = str(fields.id);
+    return requestId ? { kind: "question", sessionId, requestId } : null;
+  }
+  if (type === "form.created") {
+    const requestId = str(isRecord(fields.form) ? fields.form.id : undefined);
+    return requestId ? { kind: "question", sessionId, requestId } : null;
+  }
+  return null;
+}
+
 export function normalizeOpenCode(raw: unknown, ctx: NormalizeContext): AgentEvent | null {
   if (!isRecord(raw) || !isRecord(raw.event)) return null;
   const v = raw.v === 2 ? 2 : 1;
@@ -168,11 +213,25 @@ export function normalizeOpenCode(raw: unknown, ctx: NormalizeContext): AgentEve
     timestamp: timestampOf(raw.at, ctx.now),
   };
   if (mapped.message) event.message = mapped.message;
+  // A subagent's prompt is reported on the root session, but tagged with the child's own id so that two children
+  // asking at once are tracked (and cleared) separately. An id the format can't hold leaves it with the main agent.
+  if (isChild) {
+    const agentId = parseAgentId(ownId);
+    if (agentId) event.agentId = agentId;
+  }
   const rawTitle = str(raw.title);
   const title = rawTitle && !DEFAULT_TITLE.test(rawTitle) ? truncateTitle(rawTitle) : undefined;
   if (title) {
     event.title = title;
     event.titleSource = "tool";
+  } else {
+    // OpenCode hasn't named the session (placeholder, or the generator failed or never ran, as when a UI such as
+    // OpenChamber drives it over HTTP): the first line of the first prompt fills in until it does. No
+    // titleSource, so the store lets a later tool title replace it.
+    const prompt = str(raw.prompt)
+      ?.split(/\r?\n/)
+      .find((line) => line.trim().length > 0);
+    if (prompt) event.title = truncateTitle(prompt.trim());
   }
   // The OpenCode process: when it exits, the server drops its sessions (OpenCode sends no event on quit).
   const pid = parsePid(raw.pid) ?? parsePid(ctx.env.OPENCODE_PID);

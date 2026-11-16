@@ -1,0 +1,19 @@
+{
+  "id": "evt_1bfabc34f001Qc8Vqf9krO7a1P",
+  "created": 1794217067400,
+  "type": "session.inbox.enqueued",
+  "location": {
+    "directory": "C:\\Users\\dev\\projects\\web"
+  },
+  "data": {
+    "sessionID": "ses_e40543cc2ffewW3gz0p0TD4jA8",
+    "inboxID": "msg_1bfabc34f002abcdefghijklmn",
+    "item": {
+      "type": "user",
+      "payload": {
+        "text": "Add the word world to hello.txt\nthen run the tests"
+      },
+      "delivery": "queue"
+    }
+  }
+}

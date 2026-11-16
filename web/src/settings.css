@@ -1,0 +1,1634 @@
+/* biome-ignore-all lint/style/noDescendingSpecificity: component rules with phone overrides at the end, as in aw.css */
+/*
+ * Settings and the pairing pages. Same tokens and button atoms as aw.css (the ".aw" root class provides them),
+ * so every page shares one look. Class names are the ones the TSX already uses.
+ */
+
+.aw .settings {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+
+.aw .settings > * {
+  min-width: 0;
+}
+
+.aw .settings-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 18px;
+}
+
+.aw .settings-top h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.aw .back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--mu);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.aw .back-link:hover {
+  background: var(--s3);
+  color: var(--fg);
+}
+
+.aw .back-link svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- tabs ---------- */
+.aw .settings-tabs {
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.aw .tab-strip {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.aw .tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 9px 14px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--mu);
+  font-size: 13.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.aw .tab:hover {
+  color: var(--fg);
+}
+
+.aw .tab.on {
+  border-bottom-color: var(--pri);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.aw .attn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--need);
+}
+
+.aw .tab-select {
+  display: none;
+  width: 100%;
+  height: 44px;
+  margin-bottom: 4px;
+  padding: 0 12px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r);
+  background: var(--s1);
+  color: var(--fg);
+}
+
+.aw .settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ---------- cards ---------- */
+.aw .settings-card {
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s1);
+  box-shadow: var(--shadow);
+}
+
+.aw .settings-card > h2,
+.aw .setup-head h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.aw .settings-card > .setup-head {
+  padding: 0 0 12px;
+}
+
+.aw .setup-head h2 {
+  margin: 0;
+}
+
+.aw .settings-text,
+.aw .settings-card p {
+  margin: 0 0 12px;
+  color: var(--mu);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.aw .settings-card p:last-child {
+  margin-bottom: 0;
+}
+
+.aw .settings-card .setup-buttons + p,
+.aw .settings-card .actions + p {
+  margin-top: 12px;
+}
+
+.aw .settings-muted {
+  color: var(--fa);
+  font-size: 12.5px;
+}
+
+.aw .settings-card a {
+  color: var(--fg);
+  text-underline-offset: 2px;
+}
+
+.aw .settings-card strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.aw .settings-card code,
+.aw .welcome code {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--s2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.aw .settings-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aw .settings-list {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  color: var(--mu);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.aw .settings-list li + li {
+  margin-top: 4px;
+}
+
+.aw .settings-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 14px 24px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.aw .settings-facts dt {
+  color: var(--mu);
+}
+
+.aw .settings-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.aw .connected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--done);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aw .connected-badge svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- agents list and setup rows ---------- */
+.aw .setup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.aw .setup-sub {
+  margin: 0;
+  color: var(--mu);
+  font-size: 12.5px;
+}
+
+.aw .setup-list {
+  margin: 0 -20px;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.aw .setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 14px 20px;
+}
+
+.aw .setup-row + .setup-row {
+  border-top: 1px solid var(--line);
+}
+
+.aw .setup-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aw .setup-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.aw .tool-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--tool, var(--mu));
+}
+
+.aw .setup-path {
+  overflow: hidden;
+  color: var(--fa);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aw .setup-row .setup-path {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.aw .setup-remote .setup-path {
+  white-space: normal;
+  line-height: 1.5;
+}
+
+.aw .setup-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.aw .setup-detail,
+.aw .setup-terminal,
+.aw .setup-disconnect {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.aw .setup-detail p {
+  margin: 0 0 10px;
+}
+
+.aw .setup-detail.setup-error p,
+.aw .setup-problem {
+  color: var(--err);
+}
+
+.aw .setup-problem {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.aw .setup-changes {
+  margin: 0 0 12px;
+  padding: 10px 12px 10px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.aw .setup-buttons,
+.aw .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.aw .setup-notes {
+  margin: 0 -20px;
+  padding: 14px 20px 14px 40px;
+  border-top: 1px solid var(--line);
+  color: var(--mu);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.aw .setup-notes li + li {
+  margin-top: 4px;
+}
+
+.aw .settings-card .setup-foot {
+  margin: 0 -20px -18px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--mu);
+  font-size: 12.5px;
+}
+
+.aw .next-steps {
+  margin: 4px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: var(--need-t);
+  color: var(--fg);
+  font-size: 12.5px;
+}
+
+.aw .next-steps.reminder {
+  background: var(--s2);
+  color: var(--mu);
+}
+
+.aw .next-steps ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.aw .setup-remote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- command snippet ---------- */
+.aw .copy-command {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.aw .copy-command code {
+  padding: 5px 10px;
+  border-radius: var(--r);
+}
+
+/* ---------- disclosure rows ---------- */
+.aw .setup-disconnect > summary,
+.aw .settings-advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.aw .setup-disconnect > summary::-webkit-details-marker,
+.aw .settings-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.aw .setup-disconnect > summary::before,
+.aw .settings-advanced > summary::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-right: 1.6px solid var(--fa);
+  border-bottom: 1.6px solid var(--fa);
+  transform: rotate(-45deg);
+  transition: transform 0.12s;
+}
+
+.aw details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.aw .setup-disconnect {
+  font-size: 12.5px;
+}
+
+.aw .setup-disconnect > summary {
+  color: var(--mu);
+}
+
+.aw .setup-disconnect > p {
+  margin: 8px 0;
+  color: var(--mu);
+}
+
+.aw .settings-advanced {
+  padding: 0;
+}
+
+.aw .settings-advanced > summary {
+  min-height: 52px;
+  padding: 0 20px;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.aw .settings-advanced > summary:hover {
+  background: var(--s2);
+}
+
+.aw .settings-advanced[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.aw .settings-advanced > .setup-remote {
+  margin: 0;
+  padding: 20px;
+  border-top: 0;
+}
+
+.aw .settings-advanced > .setup-remote + .setup-remote {
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- form controls ---------- */
+.aw .phone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.aw .settings input[type="text"],
+.aw .settings input[type="password"],
+.aw .settings input[type="url"],
+.aw .remote-field input {
+  width: 100%;
+  max-width: 28rem;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r);
+  background: var(--s2);
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.aw .settings input[type="text"]:focus,
+.aw .settings input[type="password"]:focus,
+.aw .settings input[type="url"]:focus,
+.aw .remote-field input:focus,
+.aw .tab-select:focus {
+  border-color: var(--pri);
+  outline: 2px solid color-mix(in srgb, var(--pri) 35%, transparent);
+  outline-offset: 0;
+}
+
+.aw .settings input[type="checkbox"],
+.aw .settings input[type="radio"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--pri);
+}
+
+.aw .check,
+.aw .device-approve,
+.aw .settings-choice label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.aw .check {
+  margin-bottom: 4px;
+}
+
+.aw .settings-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 18px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.aw .settings-choice legend {
+  float: left;
+  width: 100%;
+  padding: 0 0 8px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.aw .settings-choice legend + * {
+  clear: both;
+}
+
+.aw .settings-choice label {
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+  cursor: pointer;
+}
+
+.aw .settings-choice label:has(input:checked) {
+  border-color: var(--pri);
+  background: color-mix(in srgb, var(--pri) 8%, var(--s2));
+}
+
+.aw .settings-choice p {
+  margin-top: 6px;
+}
+
+/* ---------- notes and callouts ---------- */
+.aw .settings-card .note {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--r);
+  font-size: 12.5px;
+}
+
+.aw .settings-card .note.ok {
+  background: color-mix(in srgb, var(--done) 12%, transparent);
+  color: var(--done);
+  font-weight: 600;
+}
+
+.aw .settings-card .note.err {
+  background: var(--err-t);
+  color: var(--err);
+}
+
+.aw .settings-card .remote-warn {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--need) 40%, var(--line));
+  border-radius: var(--r);
+  background: var(--need-t);
+  color: var(--fg);
+}
+
+.aw .remote-subhead {
+  margin: 18px 0 8px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.aw .settings-card .hint,
+.aw .settings-card .remote-hint,
+.aw .remote-card .remote-hint {
+  color: var(--fa);
+  font-size: 12.5px;
+}
+
+/* ---------- wizard stepper ---------- */
+.aw .stepper {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aw .step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0 14px;
+  padding-bottom: 22px;
+}
+
+.aw .step:last-child {
+  padding-bottom: 0;
+}
+
+.aw .step::before {
+  content: "";
+  position: absolute;
+  top: 32px;
+  bottom: 4px;
+  left: 13.5px;
+  width: 1px;
+  background: var(--line);
+}
+
+.aw .step:last-child::before {
+  display: none;
+}
+
+.aw .step-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+  background: var(--s1);
+}
+
+.aw .step.current .step-mark {
+  border-color: var(--need);
+  background: var(--need-t);
+}
+
+.aw .step.done .step-mark {
+  border-color: color-mix(in srgb, var(--done) 50%, var(--line));
+}
+
+.aw .step-body {
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.aw .step-body h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.aw .step-n {
+  color: var(--fa);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.aw .step-state {
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--s3);
+  color: var(--mu);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.aw .step.done .step-state {
+  background: color-mix(in srgb, var(--done) 14%, transparent);
+  color: var(--done);
+}
+
+.aw .step.current .step-state {
+  background: var(--need-t);
+  color: var(--need);
+}
+
+/* ---------- pairing, QR, devices ---------- */
+.aw .settings-card .pair-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+}
+
+.aw .pair-box p {
+  margin: 0;
+}
+
+.aw .qr {
+  width: 200px;
+  height: 200px;
+  border: 8px solid #fff;
+  border-radius: var(--r);
+  background: #fff;
+}
+
+.aw .pair-url code {
+  word-break: break-all;
+}
+
+.aw .device-list {
+  display: flex;
+  flex-direction: column;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.aw .device-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+}
+
+.aw .device-row + .device-row {
+  border-top: 1px solid var(--line);
+}
+
+.aw .settings input.device-name {
+  width: 11rem;
+  max-width: 100%;
+}
+
+.aw .settings-card .device-seen {
+  flex: 1 1 10rem;
+  margin: 0;
+  color: var(--fa);
+  font-size: 12px;
+}
+
+/* ---------- pairing page (phone) ---------- */
+.remote-screen {
+  display: grid;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  place-items: center;
+}
+
+.aw .remote-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(26rem, 100%);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s1);
+  box-shadow: var(--shadow);
+}
+
+.aw .remote-card h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.015em;
+}
+
+.aw .remote-card p {
+  margin: 0;
+  color: var(--mu);
+  line-height: 1.55;
+}
+
+.aw .remote-card p.remote-error {
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: var(--err-t);
+  color: var(--err);
+}
+
+.aw .remote-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.aw .remote-field input {
+  max-width: none;
+  height: 44px;
+  font-size: 16px; /* 16px stops iOS zooming into the field */
+}
+
+.aw .remote-big {
+  height: 44px;
+  font-size: 14px;
+}
+
+/* ---------- phone ---------- */
+@media (max-width: 480px) {
+  .aw .tab-strip {
+    display: none;
+  }
+
+  .aw .tab-select {
+    display: block;
+  }
+
+  .aw .settings-tabs {
+    margin-bottom: 16px;
+    border-bottom: 0;
+  }
+
+  .aw .settings-body {
+    gap: 16px;
+  }
+
+  .aw .settings-card {
+    padding: 16px;
+  }
+
+  .aw .setup-list,
+  .aw .setup-notes,
+  .aw .settings-card .setup-foot {
+    margin-inline: -16px;
+  }
+
+  .aw .setup-row,
+  .aw .settings-card .setup-foot {
+    padding-inline: 16px;
+  }
+
+  .aw .setup-notes {
+    padding: 14px 16px 14px 34px;
+  }
+
+  .aw .settings-card .setup-foot {
+    margin-bottom: -16px;
+  }
+
+  .aw .settings-advanced > summary {
+    padding: 0 16px;
+  }
+
+  .aw .settings-advanced > .setup-remote {
+    padding: 16px;
+  }
+
+  .aw .settings-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .aw .settings-facts dd {
+    margin-bottom: 12px;
+  }
+
+  .aw .settings .btn,
+  .aw .settings .btn.sm,
+  .aw .remote-card .btn {
+    height: 44px;
+  }
+
+  .aw .settings input[type="text"],
+  .aw .settings input[type="password"] {
+    max-width: none;
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .aw .settings input[type="checkbox"],
+  .aw .settings input[type="radio"] {
+    width: 22px;
+    height: 22px;
+  }
+
+  .aw .check,
+  .aw .device-approve,
+  .aw .settings-choice label {
+    min-height: 44px;
+  }
+
+  .aw .setup-row,
+  .aw .setup-remote {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aw .setup-row-action,
+  .aw .setup-remote .setup-row-action {
+    justify-content: flex-start;
+  }
+
+  .aw .step {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 0 10px;
+  }
+
+  .aw .step-mark {
+    width: 24px;
+    height: 24px;
+  }
+
+  .aw .step::before {
+    left: 11.5px;
+    top: 28px;
+  }
+
+  .aw .qr {
+    width: 100%;
+    max-width: 240px;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .aw .device-row .btn {
+    width: 100%;
+  }
+}
+
+.aw .settings-card > h2 + .settings-facts {
+  margin-top: 14px;
+}
+
+/* ================= Phone tab: feature cards, switch, push steps, devices ================= */
+.aw .settings-card.feature-card > * + * {
+  margin-top: 16px;
+}
+
+.aw .feature-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.aw .feature-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.aw .feature-head h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.aw .feature-head .settings-text {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.aw .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 18px;
+}
+
+.aw .pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.aw .pill-on {
+  background: color-mix(in srgb, var(--done) 15%, transparent);
+  color: var(--done);
+}
+
+.aw .pill-off {
+  background: var(--s3);
+  color: var(--mu);
+}
+
+.aw .switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 13px;
+  background: var(--s3);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.aw .switch.on {
+  border-color: var(--done);
+  background: var(--done);
+}
+
+.aw .switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.aw .switch:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--pri) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.aw .switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: transform 0.12s;
+}
+
+.aw .switch.on .switch-thumb {
+  transform: translateX(18px);
+}
+
+/* push: QR on the left, numbered steps on the right */
+.aw .push-grid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.aw .push-qr {
+  margin: 0;
+}
+
+.aw .push-qr .qr {
+  display: block;
+  width: 140px;
+  height: 140px;
+  border-width: 6px;
+}
+
+.aw .push-qr figcaption {
+  margin-top: 6px;
+  color: var(--fa);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.aw .ntfy-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--mu);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.aw .ntfy-steps li + li {
+  margin-top: 10px;
+}
+
+.aw .ntfy-steps li::marker {
+  color: var(--fa);
+  font-weight: 600;
+}
+
+.aw .ntfy-steps strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.aw .ntfy-steps a {
+  color: var(--fg);
+}
+
+.aw .ntfy-steps code {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--s2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.aw .seg {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 6px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+}
+
+.aw .seg button {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: calc(var(--r) - 2px);
+  background: transparent;
+  color: var(--mu);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.aw .seg button.on {
+  background: var(--s1);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--line2);
+  font-weight: 600;
+}
+
+/* fields */
+.aw .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aw .field > label,
+.aw .field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.aw .field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aw .field-row > input {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.aw .settings input.mono,
+.aw .host-text {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.aw .settings-card code.host-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  word-break: break-all;
+}
+
+.aw .settings .field > input {
+  max-width: none;
+}
+
+.aw .settings-card .field-hint {
+  margin: 0;
+  color: var(--fa);
+  font-size: 12px;
+}
+
+.aw .action-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.aw .result {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.aw .result.ok {
+  color: var(--done);
+}
+
+.aw .result.err {
+  color: var(--err);
+}
+
+/* checkbox rows: box inline on the left, description under the title */
+.aw .opt-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+  cursor: pointer;
+}
+
+.aw .opt-row input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+.aw .opt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aw .opt-title {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.aw .opt-desc {
+  color: var(--mu);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.aw .step-body .opt-row {
+  margin-bottom: 10px;
+}
+
+.aw .mini-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mu);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.aw .mini-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.aw .mini-disclosure > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid var(--fa);
+  border-bottom: 1.6px solid var(--fa);
+  transform: rotate(-45deg);
+  transition: transform 0.12s;
+}
+
+.aw .mini-disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.aw .mini-disclosure > summary:hover {
+  color: var(--fg);
+}
+
+.aw .mini-disclosure[open] > summary {
+  margin-bottom: 12px;
+}
+
+.aw .mini-disclosure .field + .field,
+.aw .mini-disclosure .field + .actions {
+  margin-top: 12px;
+}
+
+.aw .sub-head {
+  margin: 20px 0 -6px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.aw .settings-card .funnel-note {
+  margin: 16px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--need);
+  background: var(--need-t);
+  border-radius: 0 var(--r) var(--r) 0;
+  color: var(--mu);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.aw .inline-warn {
+  color: var(--need);
+  font-weight: 500;
+}
+
+/* pairing code box: QR beside its text */
+.aw .settings-card .pair-box {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.aw .pair-box .qr {
+  flex: none;
+  width: 150px;
+  height: 150px;
+  border-width: 6px;
+}
+
+.aw .pair-text {
+  min-width: 0;
+}
+
+.aw .pair-text p + p {
+  margin-top: 8px;
+}
+
+/* devices */
+.aw .device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.aw .device-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aw .settings input.device-name {
+  width: 100%;
+  max-width: 14rem;
+  height: 28px;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 600;
+  padding-inline: 6px;
+  margin-left: -6px;
+}
+
+.aw .settings input.device-name:hover {
+  border-color: var(--line2);
+}
+
+.aw .settings-card .device-seen {
+  flex: none;
+  padding-left: 0;
+  color: var(--fa);
+  font-size: 12px;
+}
+
+.aw .device-approve {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mu);
+  font-size: 12.5px;
+}
+
+/* paired phone: "Get notifications" panel under the banner */
+.aw .notify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 8px 0 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s1);
+  color: var(--mu);
+  font-size: 13px;
+}
+
+.aw .notify-panel .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aw .notify-panel .field-label {
+  color: var(--fg);
+}
+
+.aw .notify-panel code.host-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--s2);
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.aw .notify-panel a {
+  color: var(--fg);
+}
+
+@media (max-width: 480px) {
+  .aw .feature-head {
+    gap: 12px;
+  }
+
+  .aw .switch {
+    width: 52px;
+    height: 32px;
+    border-radius: 16px;
+  }
+
+  .aw .switch-thumb {
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .aw .switch.on .switch-thumb {
+    transform: translateX(20px);
+  }
+
+  .aw .push-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .aw .push-qr {
+    justify-self: center;
+  }
+
+  .aw .push-qr .qr {
+    width: 160px;
+    height: 160px;
+    max-width: none;
+    aspect-ratio: auto;
+  }
+
+  .aw .settings-card .pair-box {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .aw .pair-box .qr {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .aw .seg button {
+    height: 36px;
+  }
+
+  .aw .field-row {
+    flex-wrap: wrap;
+  }
+
+  .aw .field-row > input,
+  .aw .field-row > code {
+    flex: 1 1 100%;
+  }
+
+  .aw .field-row .btn,
+  .aw .notify-panel .btn {
+    flex: 1 1 auto;
+  }
+
+  .aw .mini-disclosure > summary {
+    min-height: 44px;
+  }
+
+  .aw .opt-row {
+    min-height: 44px;
+  }
+
+  .aw .device-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .aw .device-approve {
+    grid-column: 1;
+    min-height: 44px;
+    justify-content: space-between;
+  }
+
+  .aw .device-row .btn {
+    grid-column: 2;
+    grid-row: 2;
+    width: auto;
+  }
+
+  .aw .settings input.device-name {
+    height: 44px;
+    max-width: none;
+  }
+
+  .aw .notify-panel .btn {
+    height: 44px;
+  }
+}
+
+/* ================= Answering tab: one row per tool ================= */
+.aw .answer-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.aw .answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.aw .answer-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.aw .answer-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.aw .answer-main .settings-text {
+  margin: 2px 0 0;
+}
+
+.aw .answer-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.aw .answer-name {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.aw .answer-note {
+  margin: 4px 0 0;
+  color: var(--mu);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 60ch;
+}
+
+.aw .answer-problem {
+  color: var(--err, var(--mu));
+}
+
+.aw .answer-detail {
+  flex-basis: 100%;
+}

@@ -1,0 +1,18 @@
+{
+  "kind": "question",
+  "sessionId": "ses_e1b9ac2f7ffemAGlNdgwnJPcto",
+  "requestId": "que_1e4667d78002sandbox",
+  "toolName": "question",
+  "questions": [
+    {
+      "question": "Which colour do you like?",
+      "header": "Colour",
+      "multiple": false,
+      "options": [
+        { "label": "Red", "description": "The colour red" },
+        { "label": "Blue", "description": "The colour blue" },
+        { "label": "Green", "description": "The colour green" }
+      ]
+    }
+  ]
+}

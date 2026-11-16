@@ -5,3 +5,8 @@
 export function buildHookCommand(cliPath: string, toolId: string): string {
   return `node "${cliPath.replace(/\\/g, "/")}" hook --tool ${toolId}`;
 }
+
+/** Like the hook command, for the opt-in `decide` hooks that answer prompts from the dashboard. */
+export function buildDecideCommand(cliPath: string, toolId: string): string {
+  return `node "${cliPath.replace(/\\/g, "/")}" decide --tool ${toolId}`;
+}

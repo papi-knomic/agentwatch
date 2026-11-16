@@ -231,6 +231,88 @@ describe("OpenCode plugin", { timeout: 30_000 }, () => {
     });
   });
 
+  describe("session names from prompts", () => {
+    it("1.x: reports the first prompt's first line, then OpenCode's own title once it exists", async () => {
+      const hooks = await loadV1();
+      // Message before part, as captured; the part carries the text, only the message says it's the user's.
+      for (const name of [
+        "session-created.json",
+        "message-updated-user.json",
+        "message-part-updated-user-text.json",
+        "session-status-busy.json",
+        "session-updated-title.json",
+        "session-idle.json",
+      ]) {
+        await hooks.event({ event: fixture(name) });
+        await new Promise((resolve) => setTimeout(resolve, 3));
+      }
+      const payloads = await sent(2);
+      expect(payloads[0]).toMatchObject({ prompt: "Add the word world to hello.txt" });
+      expect(payloads[0]?.title).toMatch(/^New session/);
+      expect(payloads[1]).toMatchObject({
+        prompt: "Add the word world to hello.txt",
+        title: 'Adding "world" to hello.txt',
+      });
+      // Never the second line, and message/part events themselves are not forwarded.
+      expect(JSON.stringify(payloads)).not.toContain("run the tests");
+      expect(payloads.map((p) => (p.event as { type: string }).type)).toEqual([
+        "session.status",
+        "session.idle",
+      ]);
+    });
+
+    it("1.x: also pairs a part that arrives before its message, and cuts the prompt to 80 characters", async () => {
+      const hooks = await loadV1();
+      const part = structuredClone(fixture("message-part-updated-user-text.json")) as {
+        properties: { part: { text: string } };
+      };
+      part.properties.part.text = "x".repeat(300);
+      for (const event of [
+        fixture("session-created.json"),
+        part,
+        fixture("message-updated-user.json"),
+        fixture("session-status-busy.json"),
+      ]) {
+        await hooks.event({ event });
+      }
+      const [payload] = await sent(1);
+      expect(payload?.prompt).toBe("x".repeat(80));
+    });
+
+    it("1.x: ignores synthetic text parts", async () => {
+      const hooks = await loadV1();
+      const part = structuredClone(fixture("message-part-updated-user-text.json")) as {
+        properties: { part: { synthetic?: boolean } };
+      };
+      part.properties.part.synthetic = true;
+      for (const event of [fixture("message-updated-user.json"), part, fixture("session-status-busy.json")]) {
+        await hooks.event({ event });
+      }
+      const [payload] = await sent(1);
+      expect(payload?.prompt).toBeUndefined();
+    });
+
+    it("2.x: reports the first user prompt from the inbox, then the generated title", async () => {
+      const { ctx } = contextV2(
+        [
+          "session-created.json",
+          "session-inbox-enqueued-user.json",
+          "session-execution-started.json",
+          "session-renamed.json",
+          "session-execution-succeeded.json",
+        ].map(fixtureV2),
+      );
+      (await loadModule()).setup(ctx);
+      const payloads = await sent(2);
+      expect(payloads[0]).toMatchObject({ v: 2, prompt: "Add the word world to hello.txt" });
+      expect(payloads[0]?.title).toBeUndefined();
+      expect(payloads[1]).toMatchObject({
+        prompt: "Add the word world to hello.txt",
+        title: "Add word to hello.txt",
+      });
+    });
+  });
+
   describe("OpenCode 2.x", () => {
     it("subscribes to the events it reads and sends one per change in the captured session", async () => {
       // The order OpenCode 2.2.6 emitted them in, minus step/text/tool noise.

@@ -2,6 +2,7 @@ import type { Config, ToolSettings } from "../core/config.js";
 import type { StoreChange } from "../core/store.js";
 import { NOTIFIABLE_STATUSES, type NotifiableStatus, type Session } from "../core/types.js";
 import type { DesktopNotification, Notifier } from "../notify/index.js";
+import type { PhoneNotifier } from "../notify/ntfy.js";
 
 /** Same session + same status within this window is treated as a duplicate. */
 const DEDUPE_MS = 3000;
@@ -86,6 +87,8 @@ export function buildNotification(
 export function createNotificationDispatcher(options: {
   config: Config;
   notifier: Notifier;
+  /** Push to a phone with the same decisions as the desktop notification (the global switch, per-tool rules). */
+  phone?: PhoneNotifier;
   dashboardUrl: string;
   log: (message: string) => void;
   now?: () => number;
@@ -106,6 +109,9 @@ export function createNotificationDispatcher(options: {
     const last = lastSent.get(dedupeKey);
     if (last !== undefined && now() - last < DEDUPE_MS) return;
     lastSent.set(dedupeKey, now());
+
+    // Same mute switch, tool settings and dedupe as the desktop notification; the notifier adds its own opt-in check.
+    options.phone?.notify(session, session.status, settings.label);
 
     const notification = buildNotification(
       session,

@@ -69,12 +69,18 @@ export function projectName(cwd: string): string {
  * The server sends cwd with its on-disk casing; folding Windows drive paths here as well keeps c:\x and
  * C:\x together for sessions saved before it did.
  */
-function projectKey(cwd: string): string {
+export function projectKey(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
   return /^[a-z]:[\\/]/i.test(trimmed) ? trimmed.replace(/\//g, "\\").toLowerCase() : trimmed;
 }
 
-const STATUS_ORDER: Record<Status, number> = { needs_input: 0, error: 1, working: 2, idle: 3, done: 4 };
+export const STATUS_ORDER: Record<Status, number> = {
+  needs_input: 0,
+  error: 1,
+  working: 2,
+  idle: 3,
+  done: 4,
+};
 
 function byUrgency(a: Session, b: Session): number {
   return STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || statusSince(b).localeCompare(statusSince(a));
@@ -88,7 +94,10 @@ export interface Project {
 }
 
 /** Projects with the most urgent session first, then the most recently active. */
-export function groupByProject(sessions: Session[]): Project[] {
+export function groupByProject(
+  sessions: Session[],
+  compare: (a: Session, b: Session) => number = byUrgency,
+): Project[] {
   const projects = new Map<string, Project>();
   for (const session of sessions) {
     const key = projectKey(session.cwd);
@@ -97,13 +106,11 @@ export function groupByProject(sessions: Session[]): Project[] {
     else projects.set(key, { key, name: projectName(session.cwd), cwd: session.cwd, sessions: [session] });
   }
   const list = [...projects.values()];
-  for (const project of list) project.sessions.sort(byUrgency);
-  const lead = (p: Project) => p.sessions[0] as Session;
+  for (const project of list) project.sessions.sort(compare);
+  // Project order stays by urgency whatever order the rows inside are in.
+  const urgent = (p: Project) => Math.min(...p.sessions.map((s) => STATUS_ORDER[s.status]));
   const latest = (p: Project) => p.sessions.reduce((max, s) => (s.updatedAt > max ? s.updatedAt : max), "");
-  return list.sort(
-    (a, b) =>
-      STATUS_ORDER[lead(a).status] - STATUS_ORDER[lead(b).status] || latest(b).localeCompare(latest(a)),
-  );
+  return list.sort((a, b) => urgent(a) - urgent(b) || latest(b).localeCompare(latest(a)));
 }
 
 export function sortByUrgency(sessions: Session[]): Session[] {

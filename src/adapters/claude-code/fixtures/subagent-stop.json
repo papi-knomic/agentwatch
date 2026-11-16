@@ -1,0 +1,13 @@
+{
+  "session_id": "sess-demo-1",
+  "transcript_path": "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+  "cwd": "C:\\Users\\dev\\projects\\demo",
+  "permission_mode": "default",
+  "agent_id": "a0dcb4961017438ab",
+  "agent_type": "general-purpose",
+  "effort": { "level": "medium" },
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_transcript_path": "C:\\Users\\dev\\.claude\\projects\\demo\\subagents\\agent-a0dcb4961017438ab.jsonl",
+  "background_tasks": []
+}

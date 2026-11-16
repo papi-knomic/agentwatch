@@ -1,4 +1,5 @@
 import type { Adapter } from "../types.js";
+import { codexDecide } from "./decide.js";
 import { installCodex, uninstallCodex } from "./install.js";
 import { codexSessionLink } from "./link.js";
 import { codexMeta } from "./meta.js";
@@ -10,4 +11,5 @@ export const codexAdapter: Adapter = {
   install: installCodex,
   uninstall: uninstallCodex,
   sessionLink: codexSessionLink,
+  decide: codexDecide,
 };

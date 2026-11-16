@@ -39,13 +39,19 @@ src/
   adapters/    one folder per AI tool: meta.ts, normalize.ts, install.ts, fixtures/, README.md
     shared/    helpers that several adapters use (JSON config editing, Claude-style hooks, terminal detection)
   server/      HTTP + SSE endpoints, auth, notification decisions
-  notify/      windows.ts, macos.ts, linux.ts (one module per OS)
-  cli/         start | hook | install | uninstall | notify-test
+  notify/      windows.ts, macos.ts, linux.ts (one module per OS); ntfy.ts (opt-in phone push)
+  cli/         start | hook | decide | install | uninstall | notify-test
 web/           Vite + React dashboard (built into dist/web and served by the server)
 ```
 
 Endpoints: `GET /api/health`, `GET /api/state`, `GET /api/stream` (SSE: `snapshot`, `upsert`, `remove`),
 `POST /api/events` (needs the token), `POST /api/sessions/dismiss` (dashboard's own origin or the token).
+Opt-in remote mode (phone via Tailscale Serve, `config.remote`) adds `GET /api/me`, `POST /api/pair` (remote hosts only),
+`POST /api/devices/pair-code`, `GET /api/devices`, `POST|DELETE /api/devices/:id`, `GET|POST /api/setup/remote` and
+`POST /api/setup/remote/detect`, `GET|POST /api/setup/remote/serve` (`{action:"on"|"off"}`, runs Tailscale Serve, see rule 2)
+(loopback dashboard only), and `GET /api/me/ntfy` (paired device or loopback). Code: `src/server/serve.ts`. Code: `src/server/devices.ts`, `src/server/tailscale.ts`.
+Opt-in remote actions add `POST /api/decisions` and `GET /api/decisions/:id/wait` (token), `POST /api/decisions/:id/resolve`
+and `POST /api/setup/remote-actions` (dashboard's own origin only); see Known limitations.
 
 ### Shared event format (the contract between adapters and core)
 
@@ -61,10 +67,17 @@ interface AgentEvent {
   title?: string;      // task name: tool's session title, or first line of the first prompt (≤ 80 chars); first one sticks
   host?: string;       // where it runs: "VS Code", "Windows Terminal", ... ("VS Code*" enables VS Code click-through)
   inputPending?: boolean; // an unanswered async question; true survives background work, false clears it
+  agentId?: string;    // which agent in the session (Claude Code subagents share the session id); absent = main agent. /^[A-Za-z0-9_-]{1,64}$/, never persisted
   hidden?: boolean;    // internal helper session: suppress dashboard/notifications, including later events
   timestamp: string;   // ISO 8601, set when the hook fires; older events than a session's latest are dropped
 }
 ```
+
+Pending input is tracked per agent inside a session (in memory, in `SessionStore`): the session is `needs_input` while any
+agent waits; a non-`needs_input` event from agent X clears only X (an event with `agentId` and status `done` means that
+subagent finished, not the session); a main-agent `done`/`idle`/`error` or a new prompt (`inputPending: false`) clears
+everyone. `agentId: "unattributed"` (`UNATTRIBUTED_AGENT_ID`) marks a needs_input signal that can't say who asked (a
+Notification); anyone's activity ends it, and it is ignored when an attributed one for the same prompt arrived within 5 s.
 
 Defined in `src/core/types.ts`. Change this format only on purpose: update every adapter and the dashboard in the
 same change.
@@ -73,17 +86,47 @@ same change.
 
 1. **Never break or slow down the agent.** The `hook` command must:
    - always exit with code `0`. (In Claude Code, exit code `2` from a `Stop` hook makes Claude *keep going*.)
+   - Explicit, opt-in exception: `agentwatch decide --tool <id>` (the `remoteActions` feature, installed only with
+     `--remote-actions`). It exists to answer a permission prompt or question from the dashboard, so it may print one
+     JSON line to stdout and may wait up to ~100s, but only while a visible dashboard tab is open and the user enabled it. It
+     still exits `0`, never throws, and prints nothing otherwise. `hook` itself is unchanged.
    - print nothing to stdout. Some tools read hook stdout as instructions.
    - finish within ~1s, even if the server is down (short request timeout, failures ignored).
    - be safe to run when the server isn't running at all.
-2. **Local only.** The server listens on `127.0.0.1` only. No telemetry, no analytics, no requests to the internet,
-   no auto-update calls.
+2. **Local only.** The server listens on `127.0.0.1` only (remote mode doesn't change that). No telemetry or analytics. The only
+   outbound requests are to a notification server the user explicitly configured (phone notifications, off by default).
+   No auto-update calls. The only remote access is through a user-run HTTPS proxy such as
+   Tailscale Serve, forwarding to `127.0.0.1`, for the hosts listed in `config.remote.hosts`. Never document or support
+   Tailscale Funnel or any public exposure. The only processes we spawn for it are exactly these Tailscale CLI calls
+   (resolved absolute path, no shell, short timeouts): `tailscale status --json`, `tailscale serve status --json`, and,
+   only on an explicit click in the dashboard's "Set up phone" panel (loopback, dashboard Origin),
+   `tailscale serve --bg --yes --https=443 http://127.0.0.1:<port>` and `tailscale serve --https=443 off`. Never
+   `serve reset`, never `funnel`. Never overwrite a `:443` mapping that isn't ours, and only turn off a mapping
+   AgentWatch created (`config.remote.serve.managed`) that still points at our port.
 3. **Treat localhost as unsafe.** Any website open in the user's browser can send requests to localhost. Require the token stored in
    the user config on every write request, check the `Host` header (blocks DNS rebinding), and check `Origin`
-   on browser requests.
+   on browser requests (including reads of `/api/*` other than `/api/health`). Limit: an `Origin` check keeps other
+   web pages out (browsers can't forge it) but is not authentication; any local process can send the header. Don't
+   describe it as stronger. Remote actions must not be enabled on shared multi-user machines until the planned
+   dashboard login exists. Remote requests (Host is a configured remote host) are stricter: every `/api/*` request
+   except `/api/health` and `/api/pair` needs a valid paired-device cookie (hashed in `devices.json`, compared with
+   `timingSafeEqual`; cookie name `__Host-aw_device`, so it cannot be planted from a sibling service on the same ts.net name), writes also need `Origin` = `https://<that host>`, the token is never accepted from them (a phone
+   never gets it), approving prompts needs the per-device "Allow approvals" opt-in, and setup, device management,
+   open-session and shutdown are loopback only. Don't trust `Tailscale-User-*` headers (a local process can forge them).
 4. **Privacy.** Store only what the shared event format holds. Never save prompts, transcripts, file contents or
    environment variables. The one exception is `title`: at most the first line of a prompt, cut to 80 characters,
    so users can tell sessions apart. The hook drops it when the user sets `taskTitles: false`.
+   Second exception, only with `remoteActions` on: while a permission prompt or question is pending, its preview
+   (Bash command or file path ≤300 chars, plan ≤4000 chars of Markdown, question and option text) is held in server memory for
+   display and dropped when answered, cancelled or expired. The feedback typed when rejecting a plan (≤1000 chars) is
+   passed on to Claude and not kept. It is never written to the session file or logs.
+   Third, only with `phone.enabled`: a phone notification (ntfy) is generic by default (tool name plus "Needs your
+   input" / "Finished" / "Error"). Only with the user's `phone.includeDetails` may it add the project folder's base name,
+   the task title and the agent's short message. Never full paths, prompts, transcripts or command previews. The topic
+   and access token are secrets: never logged, never sent back to the browser. Exception: a paired device (valid cookie)
+   or the loopback dashboard may read the topic from `GET /api/me/ntfy` (an https link, the bare topic and an optional `ntfy://` link) so the phone can subscribe the
+   ntfy app, only while `phone.enabled`. The access token is never returned there, and the topic is never in
+   `/api/state` or SSE.
 5. **Don't damage the user's config.** Installers that edit `~/.claude/settings.json`, `~/.codex/config.toml`,
    `~/.grok/hooks/`, etc. must: add to what's there and never overwrite it, back it up first, be safe to run twice, support `--dry-run`,
    and have an `uninstall` that removes exactly what was added.
@@ -104,6 +147,8 @@ same change.
    - `meta.ts`: id, display name, default icon/colour/sound
    - `normalize.ts`: converts the tool's raw hook event into `AgentEvent`
    - `install.ts`: installs/uninstalls the hook (following hard rule 5)
+   - `decide.ts` (only for tools that can be answered from the dashboard, with `meta.remoteActions`): the `Adapter.decide`
+     capability, `parse(payload, env)` and `buildOutput(request, resolution)`; the generic flow is in `src/cli/decide.ts`
    - `fixtures/`: real captured hook payloads and sample config files
    - `README.md`: link to the official docs, which events are supported, known gaps
 2. Register it in `src/adapters/index.ts`. Core code must not import anything tool-specific.
@@ -140,6 +185,11 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 
 ## Known limitations (keep up to date)
 
+- Codex: subagents share the parent's `session_id`; `agent_id` (PreToolUse/PostToolUse/PermissionRequest/SubagentStart/
+  SubagentStop, per the generated schemas, not yet captured) becomes `agentId`, and `SubagentStop` finishes only that
+  agent. Dashboard answering: `PermissionRequest` only (no hook for questions or plans), via a separate synchronous
+  `decide --tool codex` entry (timeout 600) that never sends `updatedInput`/`updatedPermissions`/`interrupt` (they fail
+  closed); blocking host class; unverified against a live Codex. Re-run `install --remote-actions` and approve in `/hooks`.
 - Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
   event for API-error stops. Desktop hooks are verified; chats loaded before installation may need an app restart.
   Async questions stay needs_input until the next user prompt; blocking questions and individual simultaneous
@@ -149,18 +199,118 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 - Grok: payloads verified by capture (Grok 1.0.34): `hookEventName` is snake_case, with Claude-style duplicates, and an
   extra `stop` (reason `shutdown`) arrives after `session_end`. Permission prompts arrive as `Notification` with
   `notificationType: "permission_prompt"` (captured); idle pings ("Waiting for your next prompt") are ignored.
+  Payloads with `subagentType` (from Grok's embedded docs, not captured) are dropped so a subagent can't change the
+  parent's status, except a needs-input Notification, kept as an unattributed wait. `task_complete` is not mapped.
+  No dashboard answering: Grok has no PermissionRequest event, and `PreToolUse` `allow` only means "not blocked", it
+  never approves a pending prompt (`allow`/`ask`/`defer` exist, but none answer the prompt).
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.
+  It skips a session while any subagent is active in it (seen within 10 min, not stopped): the new shell may be
+  another agent's. Process lister (Windows PowerShell worker): output lines are split on LF only (Node's readline also
+  splits on U+2028/2029, which broke the JSON; this is the likely cause of the "Bad control character" errors in the
+  log, not confirmed against a captured command line), control characters are blanked, and a slow worker start isn't
+  counted as a slow request. The cause of the 15 s timeouts was not established (WMI being slow on that machine is the
+  suspect); the same failure is logged at most every 10 minutes.
+- Claude Code subagents share `session_id` (verified by capture, Claude Code 2.1.301, and the hooks docs "Common input
+  fields"): events fired inside a subagent carry `agent_id` and `agent_type`, the main agent's carry neither;
+  `PermissionRequest`, `PreToolUse`, `PostToolUse`, `SubagentStart`, `SubagentStop` do. The installer therefore also
+  adds the regular `hook` on `PermissionRequest` and `SubagentStop` (users must re-run `agentwatch install`; without
+  them the `Notification` still works but can't say which agent asked, and any activity clears it, as before).
+  Not verified: whether `Notification` carries `agent_id`; `AskUserQuestion` asked from a subagent; `PermissionRequest`
+  from a subagent in interactive (non-VS Code) mode.
 - OpenCode: payloads verified by capture (1.19.3 and 2.2.6 TUI). Hooks in via one generated plugin
   (`~/.config/opencode/plugins/agentwatch.js`, on Windows too) whose default export serves both plugin APIs
   (`server` for 1.x, `setup` + `ctx.event.subscribe` for 2.x) and forwards cut-down events to `hook`, tagged `v: 1|2`.
   1.x must be restarted to load it. No event on quit: sessions go when the plugin's pid exits, but 2.x runs plugins
   in a background service that outlives the TUI, so 2.x sessions expire instead. 2.2.6 ends a turn after a rejected
   permission with `execution.interrupted` reason `shutdown`. Errors, retries, Esc and subagents weren't captured.
+  Answering from the dashboard (opt-in, `install --tool opencode --remote-actions`; an unflagged install keeps the
+  choice): on a permission or question the plugin starts `agentwatch decide --tool opencode` as a child (stdin: cut-down
+  JSON with a ≤300-char preview, never the diff; stdout: one reply line), at most 5 at a time, killed when OpenCode
+  answers first (`*.replied` matched by request id) or exits, all errors swallowed, and replies to the original
+  child session/request: 1.x `POST /permission/:id/reply` `{reply: once|reject}` and `POST /question/:id/reply`
+  `{answers: string[][]}` via the plugin client's `_client.post`, 2.x `ctx.permission.reply`. Approve is always `once`.
+  Verified live on 1.19.3 (approve, deny, question, answered-in-OpenCode-first). Unverified: 2.x (not installed; source
+  only), 2.x question forms (reply route not found, so not offered), multi-select and free-text answers (options only).
+- Remote actions (answer from the dashboard; Claude Code, Codex for permissions only, OpenCode for permissions and, on 1.x, questions; opt-in): for Claude Code
+  `PermissionRequest` and `PreToolUse` (`AskUserQuestion`) hooks, for Codex one `PermissionRequest` hook, run `agentwatch decide`, which registers a pending decision with the server
+  (`POST /api/decisions`, token), long-polls it (`GET /api/decisions/:id/wait`, token) and prints the documented hook
+  JSON. Resolving (`POST /api/decisions/:id/resolve`) needs the dashboard's `Origin` header, not the token: that blocks
+  web pages but not local processes, which can send any `Origin` (see hard rule 3). Pending
+  decisions go to the dashboard as SSE `decision` / `decision-remove` events (and `decisions` in `snapshot` and
+  `/api/state`; a short hold becoming a full one is re-sent as `decision`); they are not part of `Session` and never
+  persisted. A decision records the requesting agent (`agentId`, `agentType` for display, from the hook payload). It is
+  never cancelled by session events if blocking (terminal CLI, every AskUserQuestion): while `decide`'s wait is attached
+  Claude Code shows no prompt of its own, so nothing else can have answered, and an event (another agent, main agent,
+  Notification, approval-watch's synthetic "working") is about something else. A blocking decision ends only by
+  answer, its `wait` detaching for 3s (orphan timer; an Esc/interrupt kills the hook), session end, expiry (100s),
+  or the viewer rules below. A concurrent one (VS Code / Claude app, user may answer in the host) is also cancelled by
+  a newer non-`needs_input` event (more than 1.5s after the request) from the same agent, a main-agent turn end or
+  new prompt, or that subagent's `SubagentStop`. `approval-watch.ts` skips sessions with a pending blocking
+  decision and ignores shells running our own `hook --tool` / `decide --tool`. The debug log records the ending
+  rule of each decision (`end`). Presence: each tab sends a random client id on
+  `/api/stream?client=` and `POST /api/presence {clientId, visible}` (on connect, on visibility change, every 20s
+  hidden or not). A tab is "connected" while its event stream is open (hidden tabs' timers are throttled, so reports
+  aren't relied on for that); it is "visible" if it reported visible within 150s. With no connected tab a blocking
+  decision isn't registered (cancelled after 5s if the last tab goes), in every mode. Otherwise the user setting
+  `config.remoteActionsBackgroundHold` (`full` default | `short` | `off`; read live; changed from Settings > Answering
+  via `POST /api/setup/remote-actions {backgroundHold}`, same loopback + dashboard-Origin guards, shown as
+  `remoteActions.backgroundHold` in `GET /api/setup`) decides for hidden-only tabs: `full` holds the full 100s lifetime
+  (below `decide`'s 110s deadline) and never shortens on hide; `short` holds 15s then cancels so `decide` prints
+  nothing and Claude Code asks in the terminal (visible again extends to the full lifetime, all tabs hiding shortens
+  to 15s from then); `off` registers only with a visible tab and cancels blocking decisions 2s after the last
+  visible tab hides (`hidden_cancel`). Chrome on Windows reports covered and minimized windows as hidden, hence
+  these options. Concurrent decisions ignore the setting. Phone tabs count only with "Allow approvals". The
+  dashboard shows every pending decision in a sticky "Waiting for you" area (ignores filters and collapsing), puts the
+  count in the tab title and favicon, and, only after the user clicks "Enable browser alerts", shows a browser
+  notification naming the tool and project (never the preview) when a decision arrives while the tab is hidden.
+  `decide` retries registration once after 300ms on `unknown_session` (the regular hook may still be in flight). The
+  hook runs before Claude Code's own question UI, so while a visible tab is open the AskUserQuestion prompt waits for the
+  dashboard (not shown in the terminal) for up to ~100s (less when the tabs are hidden, per the setting above);
+  `PermissionRequest` may do the same in the terminal CLI (unverified).
+  Concurrent hosts: for VS Code and Claude Desktop (`CLAUDE_CODE_ENTRYPOINT` `claude-vscode`, `claude-desktop`,
+  `claude-desktop-3p`) `PermissionRequest` decisions (permission and plan, never AskUserQuestion) are sent with
+  `concurrent: true`. The docs say hooks for a `--permission-prompt-tool` / `canUseTool` call run alongside the host and
+  whichever decides first applies (documented); that these hosts use that path is inferred, not verified, so the card
+  shows in both places and the first answer wins. Concurrent decisions register with no tab open (the card appears
+  when one opens), hold up to 540s (`CONCURRENT_TTL_MS`; `decide` waits 560s; installed hook timeouts: PermissionRequest
+  600s, AskUserQuestion 120s) with no short hold and no no-viewer cancel, and end by the usual cancel rules or the
+  orphan timer if `decide` is killed. The terminal CLI and all AskUserQuestion keep the hold rules above. Diagnostics:
+  in-memory last-50 ring buffer (no preview/question/plan text) at loopback-only `GET /api/debug/decisions` and
+  `agentwatch debug decisions`. An
+  answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
+  unverified); questions whose multi-select labels contain a comma are not offered. Payload
+  fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not
+  captures. Grok is unsupported (see Grok above); Codex is supported for permissions only (see Codex above). Codex and its auto reviewer: Codex runs
+  `PermissionRequest` hooks before the reviewer (codex-rs/core/src/tools/approvals.rs), so a waiting hook delays
+  auto-approved calls; `decide --tool codex` stays silent when `approvals_reviewer` is `auto_review` / `guardian_subagent`
+  in `$CODEX_HOME/config.toml` (top level or active profile; the desktop app may keep it elsewhere, unknown), and users
+  of the auto reviewer should leave Codex answering off. Because of that unknown, Codex requests carry
+  `DecideRequest.holdPolicy` (`visibleOnly`, `maxHoldMs` 30s): registered only with a visible tab, cancelled 2s after the
+  last visible tab hides, ignoring the background-hold setting. Codex questions (`request_user_input`) cannot be
+  answered (sync variant replies over the app-server's own connection, async is a message that ends the turn): notify
+  only. OpenCode is
+  supported through its plugin (permissions on 1.x and 2.x, questions on 1.x; see OpenCode above); its decisions are
+  concurrent, questions included (`concurrent` is now honoured for any kind: the adapter says whether its host shows its
+  own prompt). Tool-specific parsing and output live in each
+  adapter's `decide` capability (`Adapter.decide`, src/adapters/types.ts); src/cli/decide.ts is the generic flow. Hooks can't send new prompts or start plans; only Claude Code
+  Channels (a research preview) could, and that is out of scope.
+- Remote mode: the "Set up phone" wizard runs `tailscale serve` itself (`src/server/serve.ts`, tested with an injected fake
+  CLI only). Unverified: what the CLI prints when HTTPS isn't enabled for the tailnet (we only match a
+  `https://login.tailscale.com/` URL in its output and kill the process), and ntfy subscribe links: iOS does not handle `ntfy://`
+  (observed: the camera says "No usable data found"), so QR codes and buttons use `https://<server>/<topic>` plus a
+  Copy topic button and manual steps; `ntfy://` is only an optional Android "Open in ntfy app" link. The `serve status --json` shape follows Tailscale's `ipn.ServeConfig`
+  (github.com/tailscale/tailscale/blob/main/ipn/serve.go) and is parsed defensively; unknown shapes count as "in use".
+  Whether Tailscale Serve forwards `Host` as `<machine>.<tailnet>.ts.net` and the exact `tailscale serve` flags are
+  unverified (covered only by simulated-proxy tests). The loopback `Origin` check is still forgeable by local processes. A phone without
+  "Allow approvals" doesn't count as a viewer, so it doesn't hold prompts back from the terminal. Failed pairing attempts
+  are rate-limited globally (10 per minute; successes don't count, and a new code from the PC dashboard resets it), so a
+  flood can briefly block pairing, never authenticate.
 - Grok also runs hooks from Claude Code's settings.json. The Claude Code adapter ignores calls that have `GROK_*` env vars.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach the local server.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks and are out of scope.
+- Claude Desktop sessions open via the undocumented `claude://code/continue?session=local_<id>` link; the `local_` id is looked up read-only in the app's session records (Windows MSIX path verified; macOS/Linux unverified). No match, no link.
 - Clicking a notification focuses the right VS Code window (`vscode://file/<cwd>`), but not the exact Claude tab: a toast
   can launch only one link. The dashboard's "Open in VS Code" goes to the exact Claude Code extension tab (via the
   server, see the claude-code adapter README). Focusing the exact terminal tab is not supported.

@@ -17,9 +17,50 @@ turn-complete, and hooks cover that and more.
 | `UserPromptSubmit` | `working` | Clears a pending async question. Only the first prompt line can become a title; full prompts are never stored. |
 | `PostToolUse` | `working` / `needs_input` | `request_user_input_async` marks a question as pending. Other tools return to working after an approval, but don't clear an outstanding question. |
 | `PermissionRequest` | `needs_input` | Message names the tool (e.g. "Needs permission to use shell"); the command itself is not stored. Codex has no `Notification` event. |
+| `SubagentStart` | `working` (that agent) | Registers the subagent. Subagents share the parent's `session_id`; the payload's `agent_id` becomes the event's `agentId`. Ignored without a usable `agent_id`. |
+| `SubagentStop` | `done` (that agent only) | The store reads `done` with an `agentId` as "this subagent finished": the session itself is not marked done. `last_assistant_message` is never read. |
 | `Stop` | `done` | `last_assistant_message` is never read or stored. |
 | `Interrupt` | `idle` | Message "Interrupted". |
 | `SessionEnd` | `ended` | |
+
+Per-agent tracking: `PreToolUse`/`PostToolUse`/`PermissionRequest`/`SubagentStart`/`SubagentStop` payloads carry
+`agent_id` (and `agent_type`) inside a subagent, per the generated hook schemas in
+https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated (`Stop` has no `agent_id`). We pass
+`agent_id` on as `agentId` (validated), so two subagents asking at once are tracked apart. Not captured from a real
+subagent yet: the subagent fixtures below follow the schemas.
+
+## Answering from the dashboard (opt-in `decide` hook, permissions only)
+
+`agentwatch install --tool codex --remote-actions` (or the dashboard's **Answer prompts from here** switch) adds ONE
+extra entry to `PermissionRequest`, separate from the async notify entry, which is never altered:
+`agentwatch decide --tool codex`, **not async**, `"timeout": 600` (Codex's documented default; async hooks cannot
+decide). `--no-remote-actions` removes only it; `uninstall` removes it with the rest. It does nothing unless
+`remoteActions` is `true` in the config. New hooks must be trusted via `/hooks` (see below).
+
+- Docs: https://learn.chatgpt.com/docs/hooks; input schema
+  https://raw.githubusercontent.com/openai/codex/main/codex-rs/hooks/schema/generated/permission-request.command.input.schema.json
+- Output is `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}` or
+  `"behavior":"deny"` plus `"message":"Denied from the AgentWatch dashboard."`. `updatedInput`, `updatedPermissions`
+  and `interrupt` fail closed in Codex, so they are never sent. Any deny wins in Codex; no output means the normal
+  approval prompt.
+- Codex has no hook for questions (`request_user_input`) or plans, so only permission cards exist for Codex. Questions
+  cannot be answered at all (source-verified): the sync variant replies over the app-server's own connection and the
+  async variant is just a message that ends the turn, so they are notify-only.
+- **Not with Codex's auto reviewer.** Codex runs `PermissionRequest` hooks first, then the reviewer, then the user
+  prompt ([approvals.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/approvals.rs), `run_permission_request_hooks` before `request_reviewer_approval`), so
+  a waiting hook delays every auto-reviewed call. The payload has no reviewer field, so `decide` reads
+  `approvals_reviewer` (`auto_review`, alias `guardian_subagent`; enum `ApprovalsReviewer` in
+  [config_types.rs](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/config_types.rs)) from
+  `$CODEX_HOME/config.toml` (or `~/.codex/config.toml`, top level or the active `profile` table) with a tolerant
+  line reader and stays silent when it is on. The desktop app may store the setting elsewhere (unknown), so leave
+  Codex answering off if you use the auto reviewer.
+- Hold policy (so a missed reviewer costs little): Codex ignores the background-hold setting. It registers only while
+  a dashboard tab is visible, is given back to Codex when no tab is visible any more, and waits at most 30 s
+  (`DecideRequest.holdPolicy`). Whether the desktop app or VS Code extension shows its own prompt alongside the hook
+  is unverified.
+- Preview: `tool_input.command` (string, or an argv array: unverified), at most 300 characters, held in server memory
+  only while pending. `agent_id`/`agent_type` show which subagent is asking.
+- Unverified: a real round trip against a live Codex has not been captured; the fixture follows the docs.
 
 ## Trust
 
@@ -74,7 +115,9 @@ opened in the desktop app; sessions whose front end can't be identified retain t
 Verified by capture with `codex-cli 0.162.0-alpha` (bundled with the VS Code extension) on 2026-10-16. Payloads match
 the docs exactly: snake_case fields, PascalCase `hook_event_name`. `session-start`, `user-prompt-submit`,
 `post-tool-use`, `stop` and `session-end` are real captured payloads, with paths and ids replaced.
-`permission-request` and `interrupt` are still built from the docs: `codex exec` doesn't ask for approval, and we
+`permission-request` (now with `permission_mode`), `permission-request-subagent` (adds `agent_id` / `agent_type`),
+`subagent-start` and `subagent-stop` are built from the docs and generated schemas, not captured.
+`interrupt` is also built from the docs: `codex exec` doesn't ask for approval, and we
 didn't interrupt.
 `question-async` is a sanitized extract captured from the desktop app's `PostToolUse` event
 (`codex-cli 0.162.0-alpha.17.2`); tool inputs and responses were omitted.
@@ -84,5 +127,6 @@ The user's first prompt becomes the session's task title (unless `taskTitles: fa
 ## Known gaps
 
 - Desktop lifecycle hooks verified by live capture. Chats already loaded before hookup may need an app restart.
+- No hook for blocking questions or plans, so nothing to answer from the dashboard beyond permissions.
 - A pending question clears on the next user prompt; multiple simultaneous questions aren't tracked individually.
 - No error status: Codex has no event for a turn that fails with an API error.

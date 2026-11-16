@@ -9,7 +9,11 @@ const ACTIVITY_AT = Date.parse("2026-10-16T11:59:55.000Z");
 /** When our "needs input" hook event arrived. */
 const PROMPT_AT = Date.parse("2026-10-16T12:00:00.000Z");
 
-function setup(listing: ChildProcessInfo[][] | ChildProcessInfo[], event: Partial<AgentEvent> = {}) {
+function setup(
+  listing: ChildProcessInfo[][] | ChildProcessInfo[],
+  event: Partial<AgentEvent> = {},
+  isHeld?: (key: string) => boolean,
+) {
   const store = new SessionStore();
   const base = { tool: "claude-code", sessionId: "s1", cwd: "C:\\projects\\demo", pid: 100, ...event };
   store.apply({
@@ -31,6 +35,7 @@ function setup(listing: ChildProcessInfo[][] | ChildProcessInfo[], event: Partia
   const queried: number[][] = [];
   const watcher = createApprovalWatcher({
     store,
+    ...(isHeld ? { isHeld } : {}),
     listChildren: async (pids) => {
       queried.push(pids);
       return ticks[Math.min(queried.length - 1, ticks.length - 1)] ?? [];
@@ -94,6 +99,40 @@ describe("approval watcher", () => {
     expect(status()).toBe("needs_input");
   });
 
+  it("never counts our own decide hook, or the shell Claude Code runs a hook command in", async () => {
+    const commands = [
+      {
+        name: "cmd.exe",
+        command: 'cmd.exe /d /s /c "node "C:/x/dist/cli/index.js" decide --tool claude-code"',
+      },
+      { name: "bash", command: "bash -c 'node /x/dist/cli/index.js decide --tool claude-code'" },
+      { name: "pwsh.exe", command: 'pwsh -Command "& agentwatch hook --tool claude-code"' },
+      { name: "sh", command: "sh -c agentwatch   decide  --tool claude-code" },
+    ];
+    const { twoTicks, status } = setup(commands.map((c, i) => child({ ...c, pid: 400 + i })));
+    await twoTicks();
+    expect(status()).toBe("needs_input");
+  });
+
+  it("still takes a user's command that merely mentions decide", async () => {
+    const { twoTicks, status } = setup([child({ command: 'cmd.exe /c "npm run decide"' })]);
+    await twoTicks();
+    expect(status()).toBe("working");
+  });
+
+  it("leaves a session alone while a blocking dashboard prompt holds it", async () => {
+    let held = true;
+    const { watcher, status, queried } = setup([child({})], {}, () => held);
+    await watcher.tick();
+    await watcher.tick();
+    expect(status()).toBe("needs_input");
+    expect(queried).toEqual([]); // nothing even listed for it
+    held = false;
+    await watcher.tick();
+    await watcher.tick();
+    expect(status()).toBe("working");
+  });
+
   it("ignores non-shell children and other parents", async () => {
     const { twoTicks, status } = setup([child({ name: "git.exe" }), child({ pid: 201, parentPid: 999 })]);
     await twoTicks();
@@ -130,5 +169,69 @@ describe("approval watcher", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]).toContain("boom");
     expect(store.get("claude-code:s1")?.status).toBe("needs_input");
+  });
+
+  it("leaves a session alone while subagents are active: the new shell may be another agent's", async () => {
+    const { store, twoTicks, status, queried } = setup([child({})]);
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "C:\\projects\\demo",
+      status: "needs_input",
+      agentId: "a0dcb4961017438ab",
+      timestamp: new Date(PROMPT_AT + 5_000).toISOString(),
+    });
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "C:\\projects\\demo",
+      status: "working",
+      agentId: "abc266ed9ab6d4c5b",
+      timestamp: new Date(PROMPT_AT + 6_000).toISOString(),
+    });
+    await twoTicks();
+    expect(status()).toBe("needs_input");
+    expect(queried).toEqual([]);
+    // Once the other subagent has stopped, a single-agent wait is watched as before.
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "C:\\projects\\demo",
+      status: "done",
+      agentId: "abc266ed9ab6d4c5b",
+      timestamp: new Date(PROMPT_AT + 7_000).toISOString(),
+    });
+    expect(store.get("claude-code:s1")?.status).toBe("needs_input");
+  });
+
+  it("does not log a flapping failure again and again, nor 'recovered' for one it never announced", async () => {
+    const store = new SessionStore();
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "/x",
+      status: "needs_input",
+      pid: 100,
+      timestamp: new Date(PROMPT_AT).toISOString(),
+    });
+    const logs: string[] = [];
+    let failNow = true;
+    let clock = PROMPT_AT;
+    const watcher = createApprovalWatcher({
+      store,
+      listChildren: async () => {
+        if (failNow) throw new Error("process lister timed out after 15s");
+        return [];
+      },
+      now: () => clock,
+      log: (m) => logs.push(m),
+    });
+    for (let i = 0; i < 6; i++) {
+      failNow = i % 2 === 0;
+      clock += 20_000;
+      await watcher.tick();
+    }
+    expect(logs).toHaveLength(2); // the failure once, and its recovery once
+    expect(logs[1]).toContain("recovered");
   });
 });

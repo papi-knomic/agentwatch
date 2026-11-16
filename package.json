@@ -1,6 +1,6 @@
 {
   "name": "@kn0mic/agentwatch",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "One local dashboard and desktop notifications for all your AI coding agents (Claude Code, Codex, Grok, OpenCode).",
   "keywords": [
     "claude-code",
@@ -49,10 +49,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",

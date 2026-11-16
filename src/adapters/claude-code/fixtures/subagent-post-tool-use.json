@@ -1,0 +1,15 @@
+{
+  "session_id": "sess-demo-1",
+  "transcript_path": "C:\\Users\\dev\\.claude\\projects\\demo\\sess-demo-1.jsonl",
+  "cwd": "C:\\Users\\dev\\projects\\demo",
+  "permission_mode": "default",
+  "agent_id": "abc266ed9ab6d4c5b",
+  "agent_type": "general-purpose",
+  "effort": { "level": "medium" },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": { "command": "echo hi2", "description": "Print hi2" },
+  "tool_response": "<omitted>",
+  "tool_use_id": "toolu_01EXAMPLE",
+  "duration_ms": 6044
+}

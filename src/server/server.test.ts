@@ -15,18 +15,32 @@ let port: number;
 let opened: Session[];
 let connects: { tool: string; dryRun: boolean }[];
 let shutdowns: number;
+let remoteToggles: { enabled: boolean; dryRun: boolean }[];
+let toolToggles: { tool: string; enabled: boolean; dryRun: boolean }[];
+let holdModes: string[];
 
 const fakeSetupState = {
   cli: "agentwatch",
   autostart: { supported: true, installed: false },
   notes: [],
   tools: [],
+  remoteActions: {
+    supported: true,
+    enabled: false,
+    installed: false,
+    tools: ["Claude Code"],
+    perTool: [],
+    backgroundHold: "full",
+  },
 };
 
 beforeEach(async () => {
   store = new SessionStore();
   opened = [];
   connects = [];
+  remoteToggles = [];
+  toolToggles = [];
+  holdModes = [];
   shutdowns = 0;
   server = createAppServer({
     config: {
@@ -50,6 +64,19 @@ beforeEach(async () => {
         if (tool === "nope") throw new UnknownToolError(`Unknown tool "${tool}"`);
         connects.push({ tool, dryRun });
         return { results: [], setup: fakeSetupState };
+      },
+      setRemoteActions: async (enabled, dryRun) => {
+        remoteToggles.push({ enabled, dryRun });
+        return { results: [], setup: fakeSetupState };
+      },
+      setToolRemoteActions: async (tool, enabled, dryRun) => {
+        if (tool === "nope") throw new UnknownToolError(`Unknown tool "${tool}"`);
+        toolToggles.push({ tool, enabled, dryRun });
+        return { results: [], setup: fakeSetupState };
+      },
+      setBackgroundHold: async (mode) => {
+        holdModes.push(mode);
+        return fakeSetupState;
       },
     },
     onShutdown: () => {
@@ -217,6 +244,64 @@ describe("app server", () => {
     ]);
     const unknown = await send("POST", "/api/setup/connect", { headers: own, body: { tool: "nope" } });
     expect(unknown.status).toBe(400);
+  });
+
+  it("only lets the dashboard itself switch remote actions (it edits agent configs)", async () => {
+    const body = { enabled: true, dryRun: true };
+    expect((await send("POST", "/api/setup/remote-actions", { body })).status).toBe(403);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: auth, body })).status).toBe(403);
+    expect(remoteToggles).toEqual([]);
+    const own = { origin: `http://127.0.0.1:${port}` };
+    expect((await send("POST", "/api/setup/remote-actions", { headers: own, body: {} })).status).toBe(400);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: own, body })).status).toBe(200);
+    expect(remoteToggles).toEqual([{ enabled: true, dryRun: true }]);
+  });
+
+  it("per-tool answering has the same guards, and only touches the named tool", async () => {
+    const body = { tool: "codex", enabled: true };
+    expect((await send("POST", "/api/setup/remote-actions", { body })).status).toBe(403);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: auth, body })).status).toBe(403);
+    const evil = { origin: "https://evil.example" };
+    expect((await send("POST", "/api/setup/remote-actions", { headers: evil, body })).status).toBe(403);
+    expect(toolToggles).toEqual([]);
+    const own = { origin: `http://127.0.0.1:${port}` };
+    const bad = await send("POST", "/api/setup/remote-actions", {
+      headers: own,
+      body: { tool: 3, enabled: true },
+    });
+    expect(bad.status).toBe(400);
+    const unknown = await send("POST", "/api/setup/remote-actions", {
+      headers: own,
+      body: { tool: "nope", enabled: true },
+    });
+    expect(unknown.status).toBe(400);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: own, body })).status).toBe(200);
+    expect(toolToggles).toEqual([{ tool: "codex", enabled: true, dryRun: false }]);
+    expect(remoteToggles).toEqual([]);
+  });
+
+  it("only lets the dashboard itself change the background hold, and only to a known mode", async () => {
+    const body = { backgroundHold: "short" };
+    expect((await send("POST", "/api/setup/remote-actions", { body })).status).toBe(403);
+    expect((await send("POST", "/api/setup/remote-actions", { headers: auth, body })).status).toBe(403);
+    const evil = { origin: "https://evil.example" };
+    expect((await send("POST", "/api/setup/remote-actions", { headers: evil, body })).status).toBe(403);
+    expect(holdModes).toEqual([]);
+    const own = { origin: `http://127.0.0.1:${port}` };
+    for (const bad of ["fast", 1, null, ""]) {
+      const res = await send("POST", "/api/setup/remote-actions", {
+        headers: own,
+        body: { backgroundHold: bad },
+      });
+      expect(res.status).toBe(400);
+    }
+    expect(holdModes).toEqual([]);
+    const ok = await send("POST", "/api/setup/remote-actions", { headers: own, body });
+    expect(ok.status).toBe(200);
+    expect(JSON.parse(ok.body)).toMatchObject({ setup: { remoteActions: { backgroundHold: "full" } } });
+    expect(holdModes).toEqual(["short"]);
+    // The hold mode alone doesn't touch the hooks.
+    expect(remoteToggles).toEqual([]);
   });
 
   it("only lets the CLI (token, no browser origin) shut the server down", async () => {

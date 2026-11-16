@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/fixtures"]
+    "includes": ["**", "!**/fixtures", "!**/.claude"]
   },
   "formatter": {
     "enabled": true,
