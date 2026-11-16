@@ -1,3 +1,4 @@
+import { detectClaudeHost } from "../adapters/claude-code/normalize.js";
 import { toolDefaults } from "../adapters/index.js";
 import { type Config, readConfig } from "../core/config.js";
 import { HOOK_STDIN_MAX_BYTES } from "../core/constants.js";
@@ -20,14 +21,20 @@ import { parseAgentId } from "../core/types.js";
  * contract: always exit 0, never throw, and print nothing at all unless a decision was made. Silence makes Claude
  * Code carry on exactly as if the hook did not exist. It never waits unless a dashboard tab is connected to
  * answer; while it waits, Claude Code's own prompt is held back (the hook runs first), so the server cancels the
- * decision (briefly if the tabs are only in the background) and this hook then returns.
+ * decision (briefly if the tabs are only in the background) and this hook then returns. Exception: permission and
+ * plan prompts in VS Code / Claude Desktop, which have their own prompt alongside the hook (`concurrent`).
  */
 
 /**
- * Claude Code cancels the hook at its `timeout` (120 s as installed); we give up a little earlier. Longer than the
+ * Claude Code cancels the hook at its `timeout` (120 s for AskUserQuestion as installed); we give up a little earlier. Longer than the
  * server's decision lifetime (DECISION_TTL_MS, 100 s), so the server is what normally ends the wait.
  */
 export const DECIDE_WAIT_DEADLINE_MS = 110_000;
+/**
+ * Concurrent hosts (see `isConcurrentHost`): just above the server's CONCURRENT_TTL_MS (540 s) and below the 600 s
+ * hook timeout the installer sets for PermissionRequest.
+ */
+export const DECIDE_CONCURRENT_DEADLINE_MS = 560_000;
 const REGISTER_TIMEOUT_MS = 400;
 const POLL_CHUNK_MS = 25_000;
 /** Longer than a chunk, so the server's own timeout (204) is what ends a normal poll. */
@@ -48,6 +55,19 @@ export interface DecideDeps {
   now: () => number;
   sleep: (ms: number) => Promise<void>;
   deadlineMs: number;
+  /** For concurrent decisions; defaults to DECIDE_CONCURRENT_DEADLINE_MS. */
+  concurrentDeadlineMs?: number;
+}
+
+/**
+ * The VS Code extension and the Claude desktop app show their own Approve/Deny UI. The docs say that for a call that
+ * reaches a permission-prompt tool or the Agent SDK's `canUseTool`, "the hooks run alongside your host, and whichever
+ * decides first applies" (https://code.claude.com/docs/en/hooks, PermissionRequest). That these two hosts use that
+ * path is inferred, not verified. The terminal CLI is not in this list: there the hook blocks Claude Code's prompt.
+ */
+export function isConcurrentHost(env: NodeJS.ProcessEnv): boolean {
+  const host = detectClaudeHost(env);
+  return host === "VS Code" || host === "Claude Desktop";
 }
 
 interface Parsed {
@@ -176,11 +196,14 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
     const base = `http://127.0.0.1:${config.port}`;
     const headers = { "content-type": "application/json", authorization: `Bearer ${config.token}` };
 
+    // Questions come from PreToolUse, which runs before the tool and so blocks the question UI in every host.
+    const concurrent = parsed.kind !== "question" && isConcurrentHost(deps.env);
     const body = JSON.stringify({
       tool: toolId,
       sessionId: parsed.sessionId,
       kind: parsed.kind,
       toolName: parsed.toolName,
+      ...(concurrent ? { concurrent: true } : {}),
       ...(parsed.agentId ? { agentId: parsed.agentId, agentType: parsed.agentType } : {}),
       ...(parsed.kind !== "question"
         ? { preview: previewFor(parsed.toolName, parsed.toolInput) }
@@ -205,7 +228,9 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
     // null: no dashboard is open (or the feature is off, or a cap was hit). Don't hold anything up.
     if (typeof id !== "string") return;
 
-    const deadline = deps.now() + deps.deadlineMs;
+    const deadline =
+      deps.now() +
+      (concurrent ? (deps.concurrentDeadlineMs ?? DECIDE_CONCURRENT_DEADLINE_MS) : deps.deadlineMs);
     let failures = 0;
     while (deps.now() < deadline) {
       const chunk = Math.min(POLL_CHUNK_MS, deadline - deps.now());

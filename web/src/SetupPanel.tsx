@@ -1,88 +1,36 @@
 import { type CSSProperties, useState } from "react";
-import { PhoneNotifications } from "./PhoneSettings";
-import { PhoneWizard } from "./PhoneWizard";
-import { RemoteAccess } from "./RemoteAccess";
 import { type ConnectResult, connectTool, type Setup, type SetupTool, setRemoteActions } from "./setup";
 
-const OPEN_KEY = "setup-panel-open";
-
-function readOpen(): boolean | null {
-  try {
-    const value = localStorage.getItem(OPEN_KEY);
-    return value === null ? null : value === "true";
-  } catch {
-    return null;
-  }
-}
-
-function writeOpen(open: boolean): void {
-  try {
-    localStorage.setItem(OPEN_KEY, String(open));
-  } catch {
-    // Only a convenience; the panel works without it.
-  }
-}
-
-/**
- * How to connect each agent. Prominent when nothing is running yet (it's the first thing a new user
- * needs), a one-line summary that expands otherwise.
- */
-export function SetupPanel(props: { setup: Setup; onSetup: (setup: Setup) => void; prominent: boolean }) {
-  const { setup, onSetup, prominent } = props;
+/** The agents tab: every supported tool with its status, plus general notes and the terminal alternative. */
+export function AgentsSection({ setup, onSetup }: { setup: Setup; onSetup: (setup: Setup) => void }) {
   const connected = setup.tools.filter((tool) => tool.connected).length;
-  const [open, setOpen] = useState(() => readOpen() ?? connected < setup.tools.length);
-  const expanded = prominent || open;
-
-  const toggle = () => {
-    setOpen(!expanded);
-    writeOpen(!expanded);
-  };
-
   return (
-    <section className={`setup${prominent ? " setup-prominent" : ""}`} aria-labelledby="setup-title">
+    <section className="settings-card" aria-labelledby="agents-title">
       <header className="setup-head">
         <div>
-          <h2 id="setup-title">{prominent ? "Connect your agents" : "Agents"}</h2>
+          <h2 id="agents-title">Agents</h2>
           <p className="setup-sub">
-            {connected} of {setup.tools.length} configured
-            {prominent && " · finish the steps below, then start or resume an agent session"}
+            {connected} of {setup.tools.length} connected
           </p>
         </div>
-        {!prominent && (
-          <button type="button" className="text-button" aria-expanded={expanded} onClick={toggle}>
-            {expanded ? "Hide" : "Manage"}
-          </button>
-        )}
       </header>
-
-      {expanded && (
-        <>
-          <ul className="setup-list">
-            {setup.tools.map((tool) => (
-              <ToolRow key={tool.id} tool={tool} onSetup={onSetup} />
-            ))}
-          </ul>
-          {setup.remoteActions.supported && (
-            <RemoteActionsRow remote={setup.remoteActions} onSetup={onSetup} />
-          )}
-          <PhoneWizard />
-          <details className="phone-advanced">
-            <summary>Phone: advanced settings</summary>
-            <PhoneNotifications />
-            <RemoteAccess />
-          </details>
-          {setup.notes.length > 0 && (
-            <ul className="setup-notes">
-              {setup.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          )}
-          <p className="setup-foot">
-            Prefer the terminal? <CopyCommand command={`${setup.cli} install --tool all`} />
-          </p>
-        </>
-      )}
+      <ul className="setup-list">
+        {setup.tools.map((tool) => (
+          <ToolRow key={tool.id} tool={tool} cli={setup.cli} onSetup={onSetup} />
+        ))}
+      </ul>
+      <ul className="setup-notes">
+        <li>
+          After connecting, start a new session in the tool; sessions that were already running keep their old
+          hooks.
+        </li>
+        {setup.notes.map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
+      <p className="setup-foot">
+        Prefer the terminal? <CopyCommand command={`${setup.cli} install --tool all`} />
+      </p>
     </section>
   );
 }
@@ -94,7 +42,7 @@ type Step =
   | { kind: "done"; result: ConnectResult }
   | { kind: "error"; message: string };
 
-function ToolRow({ tool, onSetup }: { tool: SetupTool; onSetup: (setup: Setup) => void }) {
+function ToolRow({ tool, cli, onSetup }: { tool: SetupTool; cli: string; onSetup: (setup: Setup) => void }) {
   const [step, setStep] = useState<Step>({ kind: "idle" });
 
   // Two calls on purpose: a dry run shows exactly what will change before anything is written.
@@ -205,6 +153,17 @@ function ToolRow({ tool, onSetup }: { tool: SetupTool; onSetup: (setup: Setup) =
         </div>
       )}
 
+      {/* There is no disconnect endpoint on purpose (hard rule 5 keeps uninstall in the CLI, which backs up first). */}
+      {tool.connected && step.kind === "idle" && (
+        <details className="setup-disconnect">
+          <summary>Disconnect</summary>
+          <p>
+            Removes exactly what was added to <code>{tool.configPath}</code>. Run in a terminal:
+          </p>
+          <CopyCommand command={`${cli} uninstall --tool ${tool.id}`} />
+        </details>
+      )}
+
       {!tool.connected && !tool.error && step.kind === "idle" && (
         <div className="setup-terminal">
           <CopyCommand command={tool.command} />
@@ -218,7 +177,7 @@ function ToolRow({ tool, onSetup }: { tool: SetupTool; onSetup: (setup: Setup) =
  * Opt-in: approve, deny and answer Claude Code's prompts from this page. It adds two hooks that wait for the
  * answer, so it gets its own switch with a preview rather than riding along with "Connect".
  */
-function RemoteActionsRow({
+export function RemoteActionsRow({
   remote,
   onSetup,
 }: {
@@ -276,9 +235,10 @@ function RemoteActionsRow({
           {!on && (
             <p>
               While a visible tab of this page is open, Claude Code's questions wait here for up to about 100
-              seconds instead of showing in the terminal (permission prompts may too); hide or close the tab
-              and the terminal asks as usual. Any program on this computer can approve commands through this
-              page, so don't turn this on on a shared computer. The command shown here stays in memory only.
+              seconds instead of showing in the terminal (permission prompts may too). If the tab is hidden it
+              waits about 15 seconds, and with no dashboard tab open the terminal asks as usual. Any program
+              on this computer can approve commands through this page, so don't turn this on on a shared
+              computer. The command shown here stays in memory only.
             </p>
           )}
           <div className="setup-buttons">
@@ -319,7 +279,7 @@ function NextSteps({ steps, reminder = false }: { steps: string[]; reminder?: bo
   );
 }
 
-function CopyCommand({ command }: { command: string }) {
+export function CopyCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {

@@ -18,7 +18,8 @@ import {
 } from "./board";
 import { GetNotifications, NotPaired, PairPage } from "./PairPage";
 import { type Me, pairCodeFromHash, useMe, useUnpairedWatch } from "./remote";
-import { SetupPanel } from "./SetupPanel";
+import { type SettingsTab, settingsHref, useRoute } from "./route";
+import { SettingsPage, setupNeedsAttention } from "./Settings";
 import { useSetup } from "./setup";
 import {
   type Connection,
@@ -105,6 +106,7 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
   // A paired phone can't see or change setup (the server refuses it); it also can't open apps on the PC.
   const remote = me.remote;
   const { setup, replace: replaceSetup } = useSetup(!remote);
+  const route = useRoute();
   useUnpairedWatch(remote && connection === "reconnecting", onUnpaired);
   // Older servers have no setup endpoint; the plain empty state covers that.
   const readySetup = setup !== null && setup !== "unavailable" ? setup : null;
@@ -142,6 +144,7 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
     if (connection === "live" && storedAgent !== null && agent === null) setAgent(null);
   }, [connection, storedAgent, agent, setAgent]);
 
+  const needsSetupAttention = setupNeedsAttention(readySetup);
   const canAnswer = !me.remote || me.device.allowApprovals;
   const rowProps = { toolById, showTool, now, remote };
 
@@ -169,6 +172,21 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
             </button>
           )}
           <ConnectionBadge connection={connection} />
+          {/* Setup is loopback-only on the server, so a paired phone gets no gear. */}
+          {!remote && (
+            <a
+              className={`gear${route.page === "settings" ? " on" : ""}`}
+              href={route.page === "settings" ? "#/" : settingsHref()}
+              aria-label={needsSetupAttention ? "Settings (needs attention)" : "Settings"}
+              title="Settings"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="2.25" />
+                <path d="M8 1.5v1.75M8 12.75v1.75M1.5 8h1.75M12.75 8h1.75M3.4 3.4l1.25 1.25M11.35 11.35l1.25 1.25M12.6 3.4l-1.25 1.25M4.65 11.35L3.4 12.6" />
+              </svg>
+              {needsSetupAttention && <span className="attn-dot" />}
+            </a>
+          )}
         </div>
       </header>
 
@@ -182,65 +200,75 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
       />
 
       <main className="content">
-        {remote && <GetNotifications />}
-        {sessions.length === 0 ? (
-          readySetup ? (
-            <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent />
-          ) : (
-            <EmptyState connection={connection} />
-          )
+        {!remote && route.page === "settings" ? (
+          <SettingsPage
+            tab={route.tab}
+            setup={readySetup}
+            onSetup={replaceSetup}
+            permission={alerts.permission}
+            onEnableAlerts={alerts.enable}
+          />
         ) : (
           <>
-            {agents.length > 1 && (
-              <AgentFilter agents={agents} total={sessions.length} selected={agent} onSelect={setAgent} />
+            {remote && <GetNotifications />}
+            {sessions.length === 0 ? (
+              readySetup && !readySetup.tools.some((tool) => tool.connected) ? (
+                <WelcomeCard />
+              ) : (
+                <EmptyState connection={connection} showSettings={!remote} />
+              )
+            ) : (
+              <>
+                {agents.length > 1 && (
+                  <AgentFilter agents={agents} total={sessions.length} selected={agent} onSelect={setAgent} />
+                )}
+
+                {hiddenAttention > 0 && (
+                  <p className="filter-note">
+                    {hiddenAttention === 1
+                      ? "1 session from another agent needs you"
+                      : `${hiddenAttention} sessions from other agents need you`}{" "}
+                    ·{" "}
+                    <button type="button" className="text-button" onClick={() => setAgent(null)}>
+                      Show all
+                    </button>
+                  </p>
+                )}
+
+                {attention.length > 0 && (
+                  <section className="lane" aria-labelledby="lane-title">
+                    <h2 id="lane-title" className="lane-head">
+                      Needs you <span className="lane-count">{attention.length}</span>
+                    </h2>
+                    <ul className="rows">
+                      {attention.map((session) => (
+                        <SessionRow key={session.key} session={session} showProject {...rowProps} />
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {/* Sessions that need you are in the lane above, so collapsing a folder never hides them. */}
+                {projects.map((project) => (
+                  <ProjectCard
+                    key={project.key}
+                    project={project}
+                    collapsed={collapsedProjects.has(project.key)}
+                    onToggle={() => toggleProject(project.key)}
+                    {...rowProps}
+                  />
+                ))}
+
+                {hideFinished && finished.length > 0 && (
+                  <p className="hidden-note">
+                    {finished.length} finished {finished.length === 1 ? "session" : "sessions"} hidden ·{" "}
+                    <button type="button" className="text-button" onClick={() => setHideFinished(false)}>
+                      Show
+                    </button>
+                  </p>
+                )}
+              </>
             )}
-
-            {hiddenAttention > 0 && (
-              <p className="filter-note">
-                {hiddenAttention === 1
-                  ? "1 session from another agent needs you"
-                  : `${hiddenAttention} sessions from other agents need you`}{" "}
-                ·{" "}
-                <button type="button" className="text-button" onClick={() => setAgent(null)}>
-                  Show all
-                </button>
-              </p>
-            )}
-
-            {attention.length > 0 && (
-              <section className="lane" aria-labelledby="lane-title">
-                <h2 id="lane-title" className="lane-head">
-                  Needs you <span className="lane-count">{attention.length}</span>
-                </h2>
-                <ul className="rows">
-                  {attention.map((session) => (
-                    <SessionRow key={session.key} session={session} showProject {...rowProps} />
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {/* Sessions that need you are in the lane above, so collapsing a folder never hides them. */}
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.key}
-                project={project}
-                collapsed={collapsedProjects.has(project.key)}
-                onToggle={() => toggleProject(project.key)}
-                {...rowProps}
-              />
-            ))}
-
-            {hideFinished && finished.length > 0 && (
-              <p className="hidden-note">
-                {finished.length} finished {finished.length === 1 ? "session" : "sessions"} hidden ·{" "}
-                <button type="button" className="text-button" onClick={() => setHideFinished(false)}>
-                  Show
-                </button>
-              </p>
-            )}
-
-            {readySetup && <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent={false} />}
           </>
         )}
       </main>
@@ -596,7 +624,25 @@ function OpenButton({ sessionKey, target }: { sessionKey: string; target: string
   );
 }
 
-function EmptyState({ connection }: { connection: Connection }) {
+/** First run: nothing connected and nothing running. Everything else lives on the Settings page. */
+function WelcomeCard() {
+  const tab: SettingsTab = "agents";
+  return (
+    <div className="empty">
+      <h2>Welcome to {APP_DISPLAY_NAME}</h2>
+      <p className="empty-lead">
+        Connect your agents once, then start a new session in each tool. They all show up here.
+      </p>
+      <p className="empty-actions">
+        <a className="primary-button" href={settingsHref(tab)}>
+          Set up
+        </a>
+      </p>
+    </div>
+  );
+}
+
+function EmptyState({ connection, showSettings }: { connection: Connection; showSettings: boolean }) {
   if (connection !== "live") {
     return (
       <div className="empty">
@@ -616,6 +662,11 @@ function EmptyState({ connection }: { connection: Connection }) {
         </li>
         <li>Start a new session in VS Code, a terminal or the desktop app.</li>
       </ol>
+      {showSettings && (
+        <p className="empty-more">
+          Agents are managed in <a href={settingsHref()}>Settings</a>.
+        </p>
+      )}
     </div>
   );
 }

@@ -554,3 +554,190 @@ describe("GET /api/decisions/:id/wait", () => {
     expect((await send("GET", `/api/decisions/${id}/wait?ms=50`, { headers: auth })).status).toBe(410);
   });
 });
+
+describe("concurrent decisions (VS Code / Claude Desktop permission and plan prompts)", () => {
+  const concurrentBody = { ...permissionBody, concurrent: true };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function restartWith(options: ConstructorParameters<typeof DecisionStore>[0]): Promise<void> {
+    decisions = new DecisionStore(options);
+    await new Promise((resolve) => server.close(resolve));
+    server = createAppServer({
+      config,
+      store,
+      decisions,
+      tools: [],
+      staticDir: "does-not-exist",
+      version: "0.0.0-test",
+      presence: { graceMs: 100 },
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    port = (server.address() as AddressInfo).port;
+  }
+
+  it("registers with no dashboard open, with a long hold, and shows the card to a tab that opens later", async () => {
+    await startSession();
+    const id = await register(concurrentBody);
+    const found = decisions.list().find((d) => d.id === id);
+    expect(Date.parse(found?.expiresAt ?? "") - Date.parse(found?.createdAt ?? "")).toBe(540_000);
+    // Not cancelled for lack of a viewer, even well past the no-viewer grace.
+    await sleep(400);
+    expect(decisions.list().map((d) => d.id)).toEqual([id]);
+    const late = await openDashboard();
+    expect(late.events).toContain("snapshot");
+    expect(decisions.list()).toHaveLength(1);
+  });
+
+  it("is not shortened when tabs hide or close, and not cancelled when the last tab goes", async () => {
+    await startSession();
+    const dashboard = await openDashboard();
+    const id = await register(concurrentBody);
+    const before = decisions.list()[0]?.expiresAt;
+    await dashboard.setVisible(false);
+    await sleep(450); // longer than the 300 ms short hold used by blocking decisions in this suite
+    dashboard.close();
+    await sleep(450);
+    expect(decisions.list().map((d) => d.id)).toEqual([id]);
+    expect(decisions.list()[0]?.expiresAt).toBe(before);
+  });
+
+  it("is still cancelled when the same agent moves on, and can be answered from the dashboard", async () => {
+    await startSession();
+    await register(concurrentBody);
+    await sleep(1600); // past the cancel grace for events right after the request
+    await send("POST", "/api/events", {
+      headers: auth,
+      body: {
+        tool: "claude-code",
+        sessionId: "s1",
+        cwd: "C:\\p",
+        status: "working",
+        timestamp: new Date().toISOString(),
+      },
+    });
+    expect(decisions.list()).toEqual([]);
+    expect(decisions.debugLog().at(-1)?.end).toBe("cancelled_by_agent_event");
+
+    const id = await register(concurrentBody);
+    expect(
+      (await send("POST", `/api/decisions/${id}/resolve`, { headers: own(), body: { behavior: "allow" } }))
+        .status,
+    ).toBe(200);
+    expect(decisions.debugLog().at(-1)?.end).toBe("resolved_allow");
+  });
+
+  it("marks a concurrent decision in /api/state for the dashboard, and only that one", async () => {
+    await startSession();
+    // A normal decision is only held while a dashboard tab is visible; a concurrent one needs none.
+    const dashboard = await openDashboard();
+    const plain = await register(permissionBody);
+    const shared = await register(concurrentBody);
+    dashboard.close();
+    const state = JSON.parse((await send("GET", "/api/state", { headers: own() })).body) as {
+      decisions: Array<Record<string, unknown>>;
+    };
+    const byId = new Map(state.decisions.map((d) => [d.id, d]));
+    expect(byId.get(shared)).toHaveProperty("concurrent", true);
+    expect(byId.get(plain)).not.toHaveProperty("concurrent");
+  });
+
+  it("keeps the old rules for a question, even if the caller claims concurrent", async () => {
+    await startSession();
+    const none = await send("POST", "/api/decisions", {
+      headers: auth,
+      body: { ...questionBody, concurrent: true },
+    });
+    expect(JSON.parse(none.body)).toEqual({ id: null, reason: "no_viewer" });
+
+    const background = await openDashboard(false);
+    const id = await register({ ...questionBody, concurrent: true });
+    const found = decisions.list().find((d) => d.id === id);
+    expect(Date.parse(found?.expiresAt ?? "") - Date.parse(found?.createdAt ?? "")).toBe(300);
+    expect(decisions.debugLog().at(-1)).toMatchObject({ kind: "question", hostClass: "blocking" });
+    background.close();
+  });
+
+  it("leaves nothing stuck when decide is killed (its wait connection drops)", async () => {
+    await restartWith({ orphanMs: 120, shortHoldMs: 300 });
+    await startSession();
+    const id = await register(concurrentBody);
+    const poll = request({
+      host: "127.0.0.1",
+      port,
+      path: `/api/decisions/${id}/wait?ms=25000`,
+      headers: { host: `127.0.0.1:${port}`, ...auth },
+    });
+    poll.on("error", () => {});
+    poll.end();
+    await sleep(60);
+    expect(decisions.list()).toHaveLength(1); // a waiter is attached: not orphaned
+    await sleep(150);
+    expect(decisions.list()).toHaveLength(1);
+    poll.destroy(); // the host killed the hook
+    await sleep(400);
+    expect(decisions.list()).toEqual([]);
+    expect(decisions.debugLog().at(-1)).toMatchObject({ outcome: "registered", end: "orphan" });
+    expect((await send("GET", `/api/decisions/${id}/wait?ms=100`, { headers: auth })).status).toBe(410);
+  });
+});
+
+describe("GET /api/debug/decisions", () => {
+  it("lists attempts and outcomes without any preview, command, question or plan text", async () => {
+    await startSession();
+    const secret = "rm -rf SECRET-COMMAND";
+    // No viewer yet.
+    await send("POST", "/api/decisions", { headers: auth, body: { ...permissionBody, preview: secret } });
+    await openDashboard();
+    await register({ ...permissionBody, preview: secret, agentId: "a0dcb4961017438ab" });
+    await register({
+      ...questionBody,
+      questions: [{ question: "SECRET-QUESTION?", multiSelect: false, options: [{ label: "A" }] }],
+    });
+    await send("POST", "/api/decisions", { headers: auth, body: { nonsense: true } });
+    await send("POST", "/api/decisions", {
+      headers: auth,
+      body: { ...permissionBody, sessionId: "nope", preview: secret },
+    });
+
+    const res = await send("GET", "/api/debug/decisions");
+    expect(res.status).toBe(200);
+    expect(res.body).not.toContain("SECRET");
+    expect(res.body).not.toContain("s1"); // session ids are hashed
+    const { decisions: log } = JSON.parse(res.body) as { decisions: Record<string, unknown>[] };
+    expect(log.map((r) => r.outcome)).toEqual([
+      "no_viewer",
+      "registered",
+      "registered",
+      "invalid",
+      "unknown_session",
+    ]);
+    expect(log[1]).toMatchObject({
+      tool: "claude-code",
+      kind: "permission",
+      toolName: "Bash",
+      agentId: true,
+      hostClass: "blocking",
+    });
+    expect(log[1]?.session).toMatch(/^[0-9a-f]{8}$/);
+    expect(log[0]).not.toHaveProperty("preview");
+  });
+
+  it("keeps only the last 50", async () => {
+    await startSession();
+    for (let i = 0; i < 55; i++)
+      await send("POST", "/api/decisions", { headers: auth, body: permissionBody });
+    const { decisions: log } = JSON.parse((await send("GET", "/api/debug/decisions")).body);
+    expect(log).toHaveLength(50);
+  });
+
+  it("is refused to foreign web pages and to remote hosts", async () => {
+    expect(
+      (await send("GET", "/api/debug/decisions", { headers: { origin: "https://evil.example" } })).status,
+    ).toBe(403);
+    expect((await send("GET", "/api/debug/decisions", { headers: own() })).status).toBe(200);
+    // A host that isn't ours is blocked before the handler (DNS rebinding guard).
+    expect((await send("GET", "/api/debug/decisions", { headers: { host: "evil.example" } })).status).toBe(
+      403,
+    );
+  });
+});

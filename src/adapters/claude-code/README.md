@@ -41,7 +41,7 @@ asked from a subagent, and `PermissionRequest` from subagents in the interactive
 ## Answering from the dashboard (opt-in `decide` hooks)
 
 `agentwatch install --tool claude-code --remote-actions` (or the dashboard's **Answer prompts from here** switch) adds
-two more hooks. They run `agentwatch decide --tool claude-code`, are not async, and have `"timeout": 120` (seconds):
+two more hooks. They run `agentwatch decide --tool claude-code`, are not async, and have `"timeout": 600` (`PermissionRequest`, the documented default) or `120` (`PreToolUse`) seconds. Reinstalling updates our own older 120 s entry in place and touches nothing else:
 
 | Event | Matcher | Used for |
 |---|---|---|
@@ -86,6 +86,20 @@ fail-safe, since a terminal answer is only visible as later activity, but it can
 unrelated activity of that agent (a background task finishing). Other subagents' events don't count. If the regular
 hook hasn't told the server about the session yet, `decide` retries registration once after 300 ms. The terminal prompt
 is unaffected; only the dashboard card is lost.
+
+**Concurrent hosts (VS Code extension, Claude desktop app).** Docs (https://code.claude.com/docs/en/hooks, PermissionRequest):
+"For a call that reaches a `--permission-prompt-tool` or the Agent SDK's `canUseTool` callback, the hooks run alongside
+your host, and whichever decides first applies." That these two hosts use that path is **inferred, not verified**; the
+trigger is the same `CLAUDE_CODE_ENTRYPOINT` detection as `host` (`claude-vscode`, `claude-desktop`,
+`claude-desktop-3p`). For their `PermissionRequest` calls (kinds permission and plan) `decide` sends `concurrent: true`:
+the server registers the decision even with no dashboard open, holds it up to 540 s (`CONCURRENT_TTL_MS`) regardless of tab
+visibility (no short hold, no no-viewer cancel), and `decide` waits up to 560 s. It still ends on the cancel rules above and
+when `decide`'s wait connection drops (the host may kill the hook when you answer in its own UI; an orphan timer then clears
+the card within about 3 s). `PreToolUse` `AskUserQuestion` is never concurrent: it blocks the question UI in every host.
+
+**Diagnostics.** The server keeps the last 50 decision attempts in memory (`GET /api/debug/decisions`, this computer only;
+`agentwatch debug decisions`): time, tool, hashed session, kind, tool name, subagent yes/no, concurrent or blocking,
+outcome (`registered`, `no_viewer`, `unknown_session`, `cap`, `invalid`) and end reason. No previews, commands, questions or plans.
 
 ## Where the session runs (`host`)
 

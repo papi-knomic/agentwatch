@@ -1,5 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
+  CONCURRENT_TTL_MS,
   DECISION_SHORT_HOLD_MS,
   DECISION_TTL_MS,
   type DecisionKind,
@@ -36,8 +37,47 @@ export type ResolveResult = "ok" | "unknown" | "gone" | "answered" | "invalid";
 
 export type CreateResult = { id: string } | { id: null; reason: "session_cap" | "total_cap" | "invalid" };
 
+export type DebugOutcome = "registered" | "no_viewer" | "unknown_session" | "cap" | "invalid";
+export type DebugEnd =
+  | "resolved_allow"
+  | "resolved_deny"
+  | "answered"
+  | "cancelled_by_agent_event"
+  | "cancelled_turn_end"
+  | "session_end"
+  | "expired_short"
+  | "expired_full"
+  | "orphan"
+  | "no_viewer_cancel";
+
+/**
+ * One line of the diagnostics ring buffer. Deliberately has no preview, command, question or plan text (AGENTS.md
+ * rule 4): only enough to see why a prompt did or didn't get a card.
+ */
+export interface DebugRecord {
+  at: string;
+  tool: string;
+  /** First 8 hex chars of a hash of the session key: enough to tell sessions apart, not the id itself. */
+  session: string;
+  kind: DecisionKind | "unknown";
+  toolName: string;
+  agentId: boolean;
+  hostClass: "concurrent" | "blocking";
+  outcome: DebugOutcome;
+  end?: DebugEnd;
+  endedAt?: string;
+}
+
+const DEBUG_MAX = 50;
+
+export function shortHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 8);
+}
+
 export interface DecisionStoreOptions {
   ttlMs?: number;
+  /** Lifetime of a decision created with `concurrent: true`. */
+  concurrentTtlMs?: number;
   /** Lifetime of a decision created with `hold: "short"` (only hidden tabs to show it to). */
   shortHoldMs?: number;
   maxPerSession?: number;
@@ -59,12 +99,20 @@ export interface NewDecision {
   agentType?: string | undefined;
   /** "short": nobody is looking at the dashboard right now, so only wait briefly (see `extendShortHolds`). */
   hold?: "full" | "short" | undefined;
+  /**
+   * The host shows its own prompt alongside the hook (see CONCURRENT_TTL_MS): long hold, ignores who is looking.
+   */
+  concurrent?: boolean | undefined;
+  /** Adapter id, for diagnostics only. */
+  tool?: string | undefined;
   preview?: string | undefined;
   questions?: DecisionQuestion[] | undefined;
 }
 
 interface Entry {
   decision: PendingDecision;
+  concurrent: boolean;
+  debug: DebugRecord;
   createdMs: number;
   /** Which agent of the session asked (`main` when none). */
   agentKey: string;
@@ -94,9 +142,12 @@ export class DecisionStore {
   readonly #maxTotal: number;
   readonly #now: () => number;
   readonly #orphanMs: number;
+  readonly #concurrentTtlMs: number;
+  readonly #debug: DebugRecord[] = [];
 
   constructor(options: DecisionStoreOptions = {}) {
     this.#ttlMs = options.ttlMs ?? DECISION_TTL_MS;
+    this.#concurrentTtlMs = options.concurrentTtlMs ?? CONCURRENT_TTL_MS;
     this.#shortHoldMs = Math.min(options.shortHoldMs ?? DECISION_SHORT_HOLD_MS, this.#ttlMs);
     this.#maxPerSession = options.maxPerSession ?? 5;
     this.#maxTotal = options.maxTotal ?? 50;
@@ -114,18 +165,58 @@ export class DecisionStore {
     return () => this.#listeners.delete(listener);
   }
 
+  /** The last attempts (newest last), copied. See DebugRecord for what is and isn't in them. */
+  debugLog(): DebugRecord[] {
+    return this.#debug.map((r) => ({ ...r }));
+  }
+
+  /** Logs an attempt that never became a decision (no viewer, unknown session, invalid body). */
+  logRejected(input: NewDecision, outcome: Exclude<DebugOutcome, "registered">): void {
+    this.#log(input, outcome);
+  }
+
+  #log(input: NewDecision, outcome: DebugOutcome): DebugRecord {
+    const record: DebugRecord = {
+      at: new Date(this.#now()).toISOString(),
+      tool: truncate(input.tool ?? input.sessionKey.split(":")[0] ?? "", 64),
+      session: shortHash(input.sessionKey),
+      kind: input.kind,
+      toolName: truncate(input.toolName, 100),
+      agentId: input.agentId !== undefined,
+      hostClass: input.concurrent === true ? "concurrent" : "blocking",
+      outcome,
+    };
+    this.#debug.push(record);
+    if (this.#debug.length > DEBUG_MAX) this.#debug.shift();
+    return record;
+  }
+
+  #end(record: DebugRecord, end: DebugEnd): void {
+    if (record.end) return; // the first reason wins (an answer is not overwritten by the cleanup after it)
+    record.end = end;
+    record.endedAt = new Date(this.#now()).toISOString();
+  }
+
   create(input: NewDecision): CreateResult {
     const pending = this.list();
-    if (pending.length >= this.#maxTotal) return { id: null, reason: "total_cap" };
+    if (pending.length >= this.#maxTotal) {
+      this.#log(input, "cap");
+      return { id: null, reason: "total_cap" };
+    }
     if (pending.filter((d) => d.sessionKey === input.sessionKey).length >= this.#maxPerSession) {
+      this.#log(input, "cap");
       return { id: null, reason: "session_cap" };
     }
-    if (input.kind === "question" && !input.questions) return { id: null, reason: "invalid" };
+    if (input.kind === "question" && !input.questions) {
+      this.#log(input, "invalid");
+      return { id: null, reason: "invalid" };
+    }
 
     const id = randomBytes(18).toString("base64url");
     const createdMs = this.#now();
-    const short = input.hold === "short";
-    const lifetime = short ? this.#shortHoldMs : this.#ttlMs;
+    const concurrent = input.concurrent === true;
+    const short = !concurrent && input.hold === "short";
+    const lifetime = concurrent ? this.#concurrentTtlMs : short ? this.#shortHoldMs : this.#ttlMs;
     const decision: PendingDecision = {
       id,
       sessionKey: input.sessionKey,
@@ -142,11 +233,18 @@ export class DecisionStore {
       decision.preview = truncate(input.preview, input.kind === "plan" ? PLAN_PREVIEW_MAX : PREVIEW_MAX);
     }
     if (input.kind === "question" && input.questions) decision.questions = input.questions;
+    if (concurrent) decision.concurrent = true;
     // unref: a pending prompt must not keep the process alive.
-    const timer = setTimeout(() => this.#close(id, { type: "gone" }), lifetime);
+    const timer = setTimeout(
+      () =>
+        this.#close(id, { type: "gone" }, this.#entries.get(id)?.short ? "expired_short" : "expired_full"),
+      lifetime,
+    );
     timer.unref();
     const entry: Entry = {
       decision,
+      concurrent,
+      debug: this.#log(input, "registered"),
       createdMs,
       agentKey: input.agentId ?? MAIN_AGENT_KEY,
       short,
@@ -185,6 +283,14 @@ export class DecisionStore {
       resolution = { answers };
     }
     entry.resolution = resolution;
+    this.#end(
+      entry.debug,
+      "answers" in resolution
+        ? "answered"
+        : resolution.behavior === "allow"
+          ? "resolved_allow"
+          : "resolved_deny",
+    );
     this.#emit({ type: "remove", id });
     for (const waiter of [...entry.waiters]) waiter({ type: "resolved", resolution });
     return "ok";
@@ -225,16 +331,19 @@ export class DecisionStore {
     if (this.#entries.get(id)?.resolution) this.#close(id, null);
   }
 
-  /** Cancels everything still unanswered, e.g. when no dashboard is being looked at any more. */
+  /**
+   * Cancels everything still unanswered, e.g. when no dashboard is being looked at any more. Concurrent decisions
+   * are kept: their host shows its own prompt anyway, so nothing is being held back for a missing viewer.
+   */
   cancelPending(): void {
     for (const [id, entry] of this.#entries) {
-      if (!entry.resolution) this.#close(id, { type: "gone" });
+      if (!entry.resolution && !entry.concurrent) this.#close(id, { type: "gone" }, "no_viewer_cancel");
     }
   }
 
   cancelSession(sessionKey: string): void {
     for (const [id, entry] of this.#entries) {
-      if (entry.decision.sessionKey === sessionKey) this.#close(id, { type: "gone" });
+      if (entry.decision.sessionKey === sessionKey) this.#close(id, { type: "gone" }, "session_end");
     }
   }
 
@@ -242,7 +351,7 @@ export class DecisionStore {
   shortenFullHolds(): void {
     const now = this.#now();
     for (const [id, entry] of this.#entries) {
-      if (entry.short || entry.resolution) continue;
+      if (entry.short || entry.resolution || entry.concurrent) continue;
       entry.short = true;
       const remaining = Math.max(Math.min(entry.createdMs + this.#ttlMs - now, this.#shortHoldMs), 1);
       this.#rearm(id, entry, remaining, now);
@@ -251,7 +360,10 @@ export class DecisionStore {
 
   #rearm(id: string, entry: Entry, remaining: number, now: number): void {
     clearTimeout(entry.timer);
-    entry.timer = setTimeout(() => this.#close(id, { type: "gone" }), remaining);
+    entry.timer = setTimeout(
+      () => this.#close(id, { type: "gone" }, entry.short ? "expired_short" : "expired_full"),
+      remaining,
+    );
     entry.timer.unref();
     entry.decision = { ...entry.decision, expiresAt: new Date(now + remaining).toISOString() };
     this.#emit({ type: "update", decision: entry.decision });
@@ -285,14 +397,21 @@ export class DecisionStore {
     for (const [id, entry] of this.#entries) {
       if (entry.decision.sessionKey !== session.key || entry.resolution) continue;
       if (source && !source.clearsAll && source.agentKey !== entry.agentKey) continue;
-      if (updated > entry.createdMs + CANCEL_GRACE_MS) this.#close(id, { type: "gone" });
+      if (updated > entry.createdMs + CANCEL_GRACE_MS) {
+        this.#close(
+          id,
+          { type: "gone" },
+          source?.clearsAll ? "cancelled_turn_end" : "cancelled_by_agent_event",
+        );
+      }
     }
   }
 
   /** Ends an entry. `notify`: what to tell anyone still waiting (null: they already have their answer). */
-  #close(id: string, notify: WaitResult | null): void {
+  #close(id: string, notify: WaitResult | null, reason?: DebugEnd): void {
     const entry = this.#entries.get(id);
     if (!entry) return;
+    if (reason) this.#end(entry.debug, reason);
     clearTimeout(entry.timer);
     clearTimeout(entry.orphan);
     this.#entries.delete(id);
@@ -308,7 +427,7 @@ export class DecisionStore {
   #armOrphan(id: string, entry: Entry): void {
     clearTimeout(entry.orphan);
     entry.orphan = setTimeout(() => {
-      if (entry.waiters.size === 0) this.#close(id, { type: "gone" });
+      if (entry.waiters.size === 0) this.#close(id, { type: "gone" }, "orphan");
     }, this.#orphanMs);
     entry.orphan.unref();
   }

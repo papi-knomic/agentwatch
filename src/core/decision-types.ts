@@ -31,6 +31,11 @@ export interface PendingDecision {
   /** Command, file path, compact JSON, or (kind "plan") the plan in Markdown. Truncated; display only. */
   preview?: string;
   questions?: DecisionQuestion[];
+  /**
+   * The host shows the same prompt itself (VS Code, Claude desktop app): the dashboard card is one more place to
+   * answer, and the prompt is not held back. Absent for a normal decision.
+   */
+  concurrent?: boolean;
   createdAt: string;
   expiresAt: string;
 }
@@ -63,6 +68,13 @@ export const DECISION_TTL_MS = 100_000;
  * it to DECISION_TTL_MS.
  */
 export const DECISION_SHORT_HOLD_MS = 15_000;
+/**
+ * Hosts that show their own Approve/Deny UI next to the hook (VS Code extension, Claude desktop app) don't have their
+ * prompt held back by `decide`: the dashboard card is one more place to answer, whichever answers first wins. So the
+ * hold is long and independent of who is looking. Must stay below `decide`'s concurrent deadline (560 s) and the
+ * installed PermissionRequest hook timeout (600 s).
+ */
+export const CONCURRENT_TTL_MS = 540_000;
 
 export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;

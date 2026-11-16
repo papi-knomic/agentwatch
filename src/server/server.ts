@@ -7,7 +7,7 @@ import { parseQuestions, truncate } from "../core/decision-types.js";
 import { applyPhoneUpdate, type PhoneConfig, publicPhone } from "../core/phone.js";
 import type { SessionStore, StoreChange } from "../core/store.js";
 import { parseAgentEvent, parseAgentId, type Session, sessionKey } from "../core/types.js";
-import { DecisionStore } from "./decisions.js";
+import { DecisionStore, type NewDecision } from "./decisions.js";
 import {
   cleanDeviceName,
   type DeviceInfo,
@@ -463,6 +463,12 @@ export function createAppServer(options: AppServerOptions): Server {
         return sendJson(res, 200, { ok: true });
       }
 
+      case "GET /api/debug/decisions": {
+        // Diagnostics for "why did this prompt get (or not get) a card"; never holds previews or question text.
+        localOnly();
+        return sendJson(res, 200, { decisions: decisions.debugLog() });
+      }
+
       case "GET /api/setup": {
         localOnly();
         if (!options.setup) throw new HttpError(404, "Not found");
@@ -663,28 +669,56 @@ export function createAppServer(options: AppServerOptions): Server {
   async function registerDecision(body: unknown, res: ServerResponse): Promise<void> {
     const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
     const { tool, sessionId, kind, toolName, preview } = record;
+    const invalid: (message: string) => never = (message) => {
+      // Logged without any of the body's content except what is safe to show (see DebugRecord).
+      decisions.logRejected(
+        {
+          sessionKey: typeof sessionId === "string" ? sessionKey(String(tool), sessionId) : "?",
+          kind: kind === "permission" || kind === "question" || kind === "plan" ? kind : "permission",
+          toolName: typeof toolName === "string" ? truncate(toolName, 100) : "?",
+          agentId: parseAgentId(record.agentId),
+          concurrent: record.concurrent === true,
+          tool: typeof tool === "string" ? tool : "?",
+        },
+        "invalid",
+      );
+      throw new HttpError(400, message);
+    };
     if (typeof tool !== "string" || typeof sessionId !== "string" || typeof toolName !== "string") {
-      throw new HttpError(400, "Invalid decision");
+      return invalid("Invalid decision");
     }
-    if (kind !== "permission" && kind !== "question" && kind !== "plan")
-      throw new HttpError(400, "Invalid decision");
+    if (kind !== "permission" && kind !== "question" && kind !== "plan") return invalid("Invalid decision");
     if (!tool || tool.length > 64 || !sessionId || sessionId.length > 256 || !toolName) {
-      throw new HttpError(400, "Invalid decision");
+      return invalid("Invalid decision");
     }
     const questions = kind === "question" ? parseQuestions(record.questions) : undefined;
-    if (kind === "question" && !questions) throw new HttpError(400, "Invalid questions");
+    if (kind === "question" && !questions) return invalid("Invalid questions");
+    // Only PermissionRequest decisions can be concurrent: a PreToolUse question hook blocks the question UI in every host.
+    const concurrent = record.concurrent === true && kind !== "question";
 
     // Nothing to wait for: the caller falls back to Claude Code's own prompt straight away.
     if (config.remoteActions !== true) return sendJson(res, 200, { id: null, reason: "disabled" });
-    if (!hasConnectedViewer()) return sendJson(res, 200, { id: null, reason: "no_viewer" });
     const key = sessionKey(tool, sessionId);
-    if (!store.get(key)) return sendJson(res, 200, { id: null, reason: "unknown_session" });
-
-    const created = decisions.create({
+    const attempt: NewDecision = {
       sessionKey: key,
       kind,
       toolName: truncate(toolName, 100),
       agentId: parseAgentId(record.agentId),
+      concurrent,
+      tool,
+    };
+    // A concurrent prompt is already on screen in its host, so it needs no viewer now: the card shows up when a tab opens.
+    if (!concurrent && !hasConnectedViewer()) {
+      decisions.logRejected(attempt, "no_viewer");
+      return sendJson(res, 200, { id: null, reason: "no_viewer" });
+    }
+    if (!store.get(key)) {
+      decisions.logRejected(attempt, "unknown_session");
+      return sendJson(res, 200, { id: null, reason: "unknown_session" });
+    }
+
+    const created = decisions.create({
+      ...attempt,
       agentType:
         typeof record.agentType === "string" && AGENT_TYPE.test(record.agentType)
           ? record.agentType

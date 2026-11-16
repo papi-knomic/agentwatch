@@ -34,7 +34,14 @@ export const CLAUDE_DECIDE_HOOKS = {
   PermissionRequest: "*",
   PreToolUse: "AskUserQuestion",
 } as const;
-export const DECIDE_TIMEOUT_SECONDS = 120;
+/**
+ * AskUserQuestion keeps 120 s. PermissionRequest gets 600 s (the documented default): in VS Code / Claude Desktop the
+ * hook runs alongside the host's own prompt and may wait up to ~9 minutes, so the host must not kill it at 120 s.
+ */
+export const DECIDE_TIMEOUT_SECONDS: Record<keyof typeof CLAUDE_DECIDE_HOOKS, number> = {
+  PermissionRequest: 600,
+  PreToolUse: 120,
+};
 
 const isHookCommand = (command: unknown) => isOurHookCommand(command, claudeCodeMeta.id);
 const isDecideCommand = (command: unknown) => isOurDecideCommand(command, claudeCodeMeta.id);
@@ -51,16 +58,17 @@ export async function installClaudeCode(options: InstallOptions): Promise<Instal
       addClaudeStyleHooks(settings, CLAUDE_HOOK_EVENTS, () => handler, isHookCommand, configPath, summary);
       if (options.remoteActions === true) {
         if (!options.decideCommand) throw new Error("remoteActions needs a decideCommand.");
-        const decide = {
-          type: "command",
-          command: options.decideCommand,
-          timeout: DECIDE_TIMEOUT_SECONDS,
-        };
+        const command = options.decideCommand;
         const events = Object.keys(CLAUDE_DECIDE_HOOKS);
         addClaudeStyleHooks(
           settings,
           events,
-          () => decide,
+          // An existing entry of ours is refreshed in place (timeout included); others are never touched.
+          (event) => ({
+            type: "command",
+            command,
+            timeout: DECIDE_TIMEOUT_SECONDS[event as keyof typeof CLAUDE_DECIDE_HOOKS],
+          }),
           isDecideCommand,
           configPath,
           summary,

@@ -239,7 +239,17 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   `decide` retries registration once after 300ms on `unknown_session` (the regular hook may still be in flight). The
   hook runs before Claude Code's own question UI, so while a visible tab is open the AskUserQuestion prompt waits for the
   dashboard (not shown in the terminal) for up to ~100s, or 15s once the tabs are hidden;
-  `PermissionRequest` may do the same (unverified). An
+  `PermissionRequest` may do the same in the terminal CLI (unverified).
+  Concurrent hosts: for VS Code and Claude Desktop (`CLAUDE_CODE_ENTRYPOINT` `claude-vscode`, `claude-desktop`,
+  `claude-desktop-3p`) `PermissionRequest` decisions (permission and plan, never AskUserQuestion) are sent with
+  `concurrent: true`. The docs say hooks for a `--permission-prompt-tool` / `canUseTool` call run alongside the host and
+  whichever decides first applies (documented); that these hosts use that path is inferred, not verified, so the card
+  shows in both places and the first answer wins. Concurrent decisions register with no tab open (the card appears
+  when one opens), hold up to 540s (`CONCURRENT_TTL_MS`; `decide` waits 560s; installed hook timeouts: PermissionRequest
+  600s, AskUserQuestion 120s) with no short hold and no no-viewer cancel, and end by the usual cancel rules or the
+  orphan timer if `decide` is killed. The terminal CLI and all AskUserQuestion keep the hold rules above. Diagnostics:
+  in-memory last-50 ring buffer (no preview/question/plan text) at loopback-only `GET /api/debug/decisions` and
+  `agentwatch debug decisions`. An
   answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
   unverified); questions whose multi-select labels contain a comma are not offered. Payload
   fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not

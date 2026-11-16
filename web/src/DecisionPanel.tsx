@@ -4,6 +4,13 @@ import { type PendingDecision, type ResolveOutcome, resolveDecision } from "./us
 
 type Phase = "idle" | "sending" | ResolveOutcome;
 
+/** Where a concurrent prompt is also shown, from the session's host ("VS Code*", "Claude Desktop", ...). */
+export function concurrentPlace(host: string | undefined): string {
+  if (host === "Claude Desktop") return "the Claude app";
+  if (host?.startsWith("VS Code")) return "VS Code";
+  return "its own window";
+}
+
 const OUTCOME_NOTE: Partial<Record<Phase, string>> = {
   answered: "Already answered.",
   gone: "This request is over: it timed out, the dashboard was disconnected, or it was answered elsewhere.",
@@ -19,10 +26,13 @@ const OUTCOME_NOTE: Partial<Record<Phase, string>> = {
 export function DecisionPanel({
   decision,
   canAnswer = true,
+  host,
 }: {
   decision: PendingDecision;
   /** false on a paired phone that isn't allowed to approve: it sees the request but can't answer it. */
   canAnswer?: boolean;
+  /** The session's host, to name where a concurrent prompt is also shown. */
+  host?: string;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [feedback, setFeedback] = useState("");
@@ -123,10 +133,16 @@ export function DecisionPanel({
           on your PC.
         </p>
       )}
-      {canAnswer && !over && (
+      {canAnswer && !over && decision.concurrent === true && (
         <p className="decision-note">
-          Claude Code is waiting for this answer and is not showing it in the terminal meanwhile. If you hide
-          or close this tab, or wait about 100 seconds, the normal prompt appears there instead.
+          Also showing in {concurrentPlace(host)}. Answer here or there; whichever is first counts.
+        </p>
+      )}
+      {canAnswer && !over && decision.concurrent !== true && (
+        <p className="decision-note">
+          Claude Code is waiting for this answer and is not showing it in the terminal meanwhile. While this
+          tab is visible it waits up to about 100 seconds; if the tab is hidden it waits about 15 seconds.
+          Closing all dashboard tabs hands the prompt back to the terminal within about 5 seconds.
         </p>
       )}
     </fieldset>

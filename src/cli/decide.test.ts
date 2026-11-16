@@ -552,3 +552,68 @@ describe("runDecide with subagents and a session the server does not know yet", 
     expect(sent).not.toHaveProperty("agentId");
   });
 });
+
+describe("runDecide in hosts that show their own prompt (concurrent)", () => {
+  let permission: string;
+  let question: string;
+  beforeEach(async () => {
+    permission = await fixture("permission-request.json");
+    question = await fixture("pre-tool-use-ask-user-question.json");
+  });
+
+  /** Records the register body and the deadline used (how far `now` is allowed to advance while polling). */
+  function probe(stdin: string, env: NodeJS.ProcessEnv) {
+    const sent: Record<string, unknown>[] = [];
+    let now = 0;
+    let polled = 0;
+    const h = harness(stdin, baseConfig(1), {
+      env,
+      now: () => now,
+      deadlineMs: 60_000,
+      concurrentDeadlineMs: 120_000,
+      fetch: async (input, init) => {
+        if (String(input).endsWith("/api/decisions")) {
+          sent.push(JSON.parse(String(init?.body)));
+          return json(200, { id: "abc" });
+        }
+        const ms = Number(new URL(String(input)).searchParams.get("ms"));
+        polled += ms;
+        now += ms;
+        return json(204);
+      },
+    });
+    return { h, sent, polled: () => polled };
+  }
+
+  it("sends concurrent for permission and plan prompts from VS Code and Claude Desktop, and waits longer", async () => {
+    for (const entrypoint of ["claude-vscode", "claude-desktop", "claude-desktop-3p"]) {
+      const p = probe(permission, { CLAUDE_CODE_ENTRYPOINT: entrypoint });
+      await runDecide("claude-code", p.h.deps);
+      expect(p.sent[0]).toMatchObject({ kind: "permission", concurrent: true });
+      expect(p.polled()).toBe(120_000);
+      expect(p.h.printed).toEqual([]);
+    }
+    const plan = probe(JSON.stringify({ ...JSON.parse(permission), tool_name: "ExitPlanMode" }), {
+      CLAUDE_CODE_ENTRYPOINT: "claude-vscode",
+    });
+    await runDecide("claude-code", plan.h.deps);
+    expect(plan.sent[0]).toMatchObject({ kind: "plan", concurrent: true });
+  });
+
+  it("keeps the old rules for the terminal CLI and for AskUserQuestion, even from VS Code", async () => {
+    const cli = probe(permission, { CLAUDE_CODE_ENTRYPOINT: "cli" });
+    await runDecide("claude-code", cli.h.deps);
+    expect(cli.sent[0]).not.toHaveProperty("concurrent");
+    expect(cli.polled()).toBe(60_000);
+
+    const unknownHost = probe(permission, {});
+    await runDecide("claude-code", unknownHost.h.deps);
+    expect(unknownHost.sent[0]).not.toHaveProperty("concurrent");
+
+    const asked = probe(question, { CLAUDE_CODE_ENTRYPOINT: "claude-vscode" });
+    await runDecide("claude-code", asked.h.deps);
+    expect(asked.sent[0]).toMatchObject({ kind: "question" });
+    expect(asked.sent[0]).not.toHaveProperty("concurrent");
+    expect(asked.polled()).toBe(60_000);
+  });
+});

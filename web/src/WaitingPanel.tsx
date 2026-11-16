@@ -4,7 +4,7 @@ import { projectName } from "./board";
 import { DecisionPanel } from "./DecisionPanel";
 import type { PendingDecision, Session, ToolInfo } from "./useAgentStream";
 
-type Permission = NotificationPermission | "unsupported";
+export type Permission = NotificationPermission | "unsupported";
 
 function currentPermission(): Permission {
   try {
@@ -114,10 +114,13 @@ export function WaitingPanel({
           </button>
         )}
       </div>
-      <p className="waiting-note">
-        Claude Code is holding its own prompt back while it waits for you here. Answer here, or in the
-        terminal when this runs out.
-      </p>
+      {/* Concurrent prompts are also shown in their host, so holding a prompt back does not apply to them. */}
+      {!decisions.every((d) => d.concurrent === true) && (
+        <p className="waiting-note">
+          Claude Code is holding its own prompt back while it waits for you here. Answer here, or in the
+          terminal when this runs out.
+        </p>
+      )}
       {decisions.map((decision) => {
         const session = byKey.get(decision.sessionKey);
         const tool = session ? toolById.get(session.tool) : undefined;
@@ -135,11 +138,18 @@ export function WaitingPanel({
                 </span>
               )}
               {caption && <span className="waiting-agent">{caption}</span>}
-              <span className="waiting-left" title="Then Claude Code asks in the terminal instead">
+              <span
+                className="waiting-left"
+                title={
+                  decision.concurrent === true
+                    ? "The prompt stays open where it is also shown"
+                    : "Then Claude Code asks in the terminal instead"
+                }
+              >
                 {left}s left
               </span>
             </p>
-            <DecisionPanel decision={decision} canAnswer={canAnswer} />
+            <DecisionPanel decision={decision} canAnswer={canAnswer} host={session?.host} />
           </div>
         );
       })}

@@ -205,7 +205,7 @@ describe("remote actions (decide hooks)", () => {
     // The regular (async) hook that says which agent is asking sits next to the decide hook.
     expect(settings.hooks.PermissionRequest).toEqual([
       { hooks: [{ type: "command", command: HOOK, async: true, timeout: 10 }] },
-      { matcher: "*", hooks: [{ type: "command", command: DECIDE, timeout: 120 }] },
+      { matcher: "*", hooks: [{ type: "command", command: DECIDE, timeout: 600 }] },
     ]);
     expect(settings.hooks.PreToolUse[0]).toEqual(EXISTING.hooks.PreToolUse[0]);
     expect(settings.hooks.PreToolUse[1]).toEqual({
@@ -214,6 +214,33 @@ describe("remote actions (decide hooks)", () => {
     });
     // The decide hook waits for an answer, so it must not be async.
     expect(JSON.stringify(settings.hooks.PermissionRequest[1])).not.toContain("async");
+  });
+
+  it("upgrades an older 120 s PermissionRequest entry of ours in place, leaving everything else alone", async () => {
+    await writeSettings(EXISTING);
+    await installClaudeCode({ ...options0(), remoteActions: true });
+    const old = await readSettings();
+    old.hooks.PermissionRequest[1].hooks[0].timeout = 120;
+    // A foreign PermissionRequest entry with its own timeout must not be touched.
+    old.hooks.PermissionRequest.push({
+      matcher: "Bash",
+      hooks: [{ type: "command", command: "mine", timeout: 7 }],
+    });
+    await writeSettings(old);
+
+    const upgraded = await installClaudeCode({ ...options0(), remoteActions: true });
+    expect(upgraded.changed).toBe(true);
+    expect(upgraded.summary).toEqual(["update PermissionRequest hook (*)"]);
+    expect(upgraded.backupPath).toBeDefined();
+    const settings = await readSettings();
+    expect(settings.hooks.PermissionRequest[1].hooks[0].timeout).toBe(600);
+    expect(settings.hooks.PermissionRequest[2]).toEqual(old.hooks.PermissionRequest[2]);
+    expect(settings.hooks.PreToolUse[1].hooks[0].timeout).toBe(120);
+    expect((await installClaudeCode({ ...options0(), remoteActions: true })).changed).toBe(false);
+
+    // Uninstall removes exactly ours: only the foreign entry is left behind in that event.
+    await uninstallClaudeCode(options0());
+    expect((await readSettings()).hooks.PermissionRequest).toEqual([old.hooks.PermissionRequest[2]]);
   });
 
   it("is idempotent, and a dry run writes nothing", async () => {

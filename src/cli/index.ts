@@ -10,6 +10,7 @@ import { NOTIFIABLE_STATUSES, type NotifiableStatus, type Session } from "../cor
 import { createNotifier } from "../notify/index.js";
 import { createPhoneNotifier } from "../notify/ntfy.js";
 import { buildNotification } from "../server/notifications.js";
+import { debugDecisionsCommand } from "./debug.js";
 import { defaultDecideDeps, runDecide } from "./decide.js";
 import { runHook } from "./hook.js";
 import { installCommand, setupCommand } from "./install.js";
@@ -50,6 +51,7 @@ Fine-grained:
         [--dry-run] [--home <dir>]         start-at-login and the notification registration
   ${APP_NAME} notify-test [--tool <id>] [--status needs_input|done|error] [--phone]
                                          Show a sample notification (--phone: send a test push to your phone instead)
+  ${APP_NAME} debug decisions              Why prompts did or didn't get a dashboard card (last 50, no prompt text)
   ${APP_NAME} hook --tool <id> [payload]   Called by agents; not for direct use
   ${APP_NAME} decide --tool <id>           Called by the opt-in remote-action hooks; not for direct use
 
@@ -116,6 +118,11 @@ async function main(): Promise<void> {
     const toolIndex = rest.indexOf("--tool");
     if (toolIndex >= 0) await runDecide(rest[toolIndex + 1], defaultDecideDeps());
     process.exit(0);
+  }
+
+  if (command === "debug") {
+    if (rest[0] !== "decisions") throw new Error(`Usage: ${APP_NAME} debug decisions`);
+    return debugDecisionsCommand();
   }
 
   const { values } = parseArgs({
