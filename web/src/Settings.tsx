@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
 import type { BackgroundHold } from "../../src/core/decision-types.js";
 import type { Permission } from "./decisionAlerts";
-import { PhoneNotifications } from "./PhoneSettings";
-import { PhoneWizard } from "./PhoneWizard";
-import { RemoteAccess } from "./RemoteAccess";
+import { PhoneTab } from "./PhoneTab";
 import { SETTINGS_TABS, type SettingsTab, settingsHref } from "./route";
 import { AgentsSection, CopyCommand, RemoteActionsRow } from "./SetupPanel";
 import { getPhone, type PhoneSettings, type Setup, setBackgroundHold } from "./setup";
@@ -166,29 +164,16 @@ function NotificationsTab({
       </section>
 
       <section className="settings-card">
-        <h2>Phone push (ntfy)</h2>
+        <h2>Push notifications</h2>
         <p className="settings-text">
           {phone === null
-            ? "Push notifications to your phone through ntfy."
+            ? "Push notifications to your phone with the free ntfy app."
             : phone.enabled
               ? `On, through ${phone.server}.`
-              : "Off. Push notifications to your phone through ntfy."}{" "}
+              : "Off. Push notifications to your phone with the free ntfy app."}{" "}
           <a href={settingsHref("phone")}>Manage on the Phone tab</a>
         </p>
       </section>
-    </>
-  );
-}
-
-function PhoneTab() {
-  return (
-    <>
-      <PhoneWizard />
-      <details className="phone-advanced settings-card settings-advanced">
-        <summary>Advanced: hosts, ntfy server, paired devices</summary>
-        <PhoneNotifications />
-        <RemoteAccess />
-      </details>
     </>
   );
 }

@@ -219,9 +219,11 @@ Get a push on your phone when an agent needs you or finishes, even away from you
 The quickest way is *Settings → Phone* (see "Use AgentWatch from your phone"). Manually:
 
 1. Install the ntfy app on your phone (Android, iOS).
-2. On this computer's dashboard, open *Settings → Phone → Advanced → Phone notifications (ntfy)* and turn it on. A random topic is
+2. On this computer's dashboard, open *Settings → Phone → Push notifications* and turn it on. A random topic is
    generated for you. (The same switch lives in `config.json` under `phone`.)
-3. In the ntfy app, subscribe to that topic (use the same server if you changed it).
+3. Subscribe the ntfy app to that topic: on iPhone open ntfy, tap **+**, paste the topic (use **Copy topic**) and tap
+   Subscribe; on Android scan the QR code (it encodes an `https://ntfy.sh/<topic>` link) or do the same. iOS doesn't open
+   `ntfy://` links, which is why the code is a plain https link.
 4. Press **Send test**, or run `agentwatch notify-test --phone`.
 
 Phone pushes follow the same rules as desktop notifications: the master `notifications` switch, each tool's
@@ -319,10 +321,10 @@ Open **Settings** > **Phone** on the PC's dashboard. The **Set up phone** panel 
    won't touch it. When it works, the panel says "Phone access is on at https://<machine>.<tailnet>.ts.net".
 2. **On your phone:** install **Tailscale** and sign in with the same account as this PC (download link in the panel). For
    notifications, also install **ntfy** (Google Play or App Store links in the panel).
-3. **Pair:** keep **Send notifications to this phone** ticked (it turns on ntfy with a fresh random topic on ntfy.sh and
+3. **Pair:** keep **Also turn on push notifications** ticked (it turns on ntfy with a fresh random topic on ntfy.sh and
    generic text only), press **Show pairing code**, scan the QR code with the phone's camera (Tailscale must be on) and
-   name the phone. The code works once and expires in 2 minutes. On the phone tap **Get notifications** to open ntfy
-   subscribed to your topic. The panel shows "Paired: <name>".
+   name the phone. The code works once and expires in 2 minutes. On the phone tap **Get notifications** for the
+   subscribe steps (a link, a Copy topic button, and manual steps for iPhone and Android). The panel shows "Paired: <name>".
 
 The address to open on the phone is `https://<machine>.<tailnet>.ts.net` (shown in step 1; the pairing QR code opens it
 for you). It works only with Tailscale on, and only on your devices.
@@ -333,7 +335,7 @@ for you). It works only with Tailscale on, and only on your devices.
 2. Send a prompt in an agent on the PC and watch its row change on the phone.
 3. To answer prompts from the phone, tick **Allow approvals** for it on the PC (same panel). Without it the phone can
    only watch and dismiss.
-4. Under *Settings → Phone → Advanced: hosts, ntfy server, paired devices*, press **Send test** (or run
+4. Under *Settings → Phone → Push notifications*, press **Send test** (or run
    `agentwatch notify-test --phone`) and check that the push arrives in the ntfy app.
 
 **Revoke** removes a phone at once. **Turn off phone access** disables remote access and, only if
@@ -356,8 +358,7 @@ connections immediately.
 
 Not verified against a live tailnet: that Serve forwards the `Host` header as `<machine>.<tailnet>.ts.net` (AgentWatch
 refuses the request otherwise), what the Tailscale CLI prints when HTTPS isn't enabled yet (we look for a
-`https://login.tailscale.com/` link), and whether the `ntfy://` link opens the ntfy app on iOS (documented for Android
-only; the store links stay on screen). The `serve status --json` shape follows Tailscale's `ipn.ServeConfig` source.
+`https://login.tailscale.com/` link), (iOS was observed not to handle `ntfy://`, so AgentWatch uses https links). The `serve status --json` shape follows Tailscale's `ipn.ServeConfig` source.
 
 ## Troubleshooting
 
@@ -393,7 +394,7 @@ code** and scan the new QR code. A code expires after 2 minutes and works once, 
 revoke it there.
 
 **Phone push doesn't arrive.** Make sure the ntfy app is subscribed to your topic (tap **Get notifications** on the
-phone), notifications are allowed for ntfy, and phone notifications are on (*Settings → Phone → Advanced*).
+phone), notifications are allowed for ntfy, and push notifications are on (*Settings → Phone*).
 Then run `agentwatch notify-test --phone`.
 
 **"Turn on phone access" says port 443 is used by something else.** Another Tailscale Serve mapping already uses

@@ -175,6 +175,24 @@ describe("POST /api/setup/remote/serve", () => {
   });
 });
 
+describe("GET /api/setup/remote after the wizard's turn-on", () => {
+  it("reports what the wizard just turned on, so the advanced panel can never disagree", async () => {
+    config.remote = { enabled: false, hosts: [] };
+    expect(JSON.parse((await send("GET", "/api/setup/remote")).body)).toMatchObject({
+      enabled: false,
+      hosts: [],
+    });
+    await send("POST", "/api/setup/remote/serve", own(), { action: "on" });
+    expect(JSON.parse((await send("GET", "/api/setup/remote")).body)).toMatchObject({
+      enabled: true,
+      hosts: [HOST],
+      managed: true,
+    });
+    await send("POST", "/api/setup/remote/serve", own(), { action: "off" });
+    expect(JSON.parse((await send("GET", "/api/setup/remote")).body)).toMatchObject({ enabled: false });
+  });
+});
+
 describe("GET /api/me/ntfy", () => {
   const enable = () => {
     phone = { ...phone, enabled: true, topic: TOPIC };
@@ -204,6 +222,8 @@ describe("GET /api/me/ntfy", () => {
       enabled: true,
       link: `ntfy://ntfy.sh/${TOPIC}`,
       web: `https://ntfy.sh/${TOPIC}`,
+      topic: TOPIC,
+      server: "https://ntfy.sh",
     });
     expect(res.body).not.toContain("tk_secret_value");
   });

@@ -124,7 +124,7 @@ same change.
    input" / "Finished" / "Error"). Only with the user's `phone.includeDetails` may it add the project folder's base name,
    the task title and the agent's short message. Never full paths, prompts, transcripts or command previews. The topic
    and access token are secrets: never logged, never sent back to the browser. Exception: a paired device (valid cookie)
-   or the loopback dashboard may read the topic from `GET /api/me/ntfy` (as an `ntfy://` link) so one tap subscribes the
+   or the loopback dashboard may read the topic from `GET /api/me/ntfy` (an https link, the bare topic and an optional `ntfy://` link) so the phone can subscribe the
    ntfy app, only while `phone.enabled`. The access token is never returned there, and the topic is never in
    `/api/state` or SSE.
 5. **Don't damage the user's config.** Installers that edit `~/.claude/settings.json`, `~/.codex/config.toml`,
@@ -298,8 +298,9 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   Channels (a research preview) could, and that is out of scope.
 - Remote mode: the "Set up phone" wizard runs `tailscale serve` itself (`src/server/serve.ts`, tested with an injected fake
   CLI only). Unverified: what the CLI prints when HTTPS isn't enabled for the tailnet (we only match a
-  `https://login.tailscale.com/` URL in its output and kill the process), and whether `ntfy://` opens the ntfy app on iOS
-  (documented for Android). The `serve status --json` shape follows Tailscale's `ipn.ServeConfig`
+  `https://login.tailscale.com/` URL in its output and kill the process), and ntfy subscribe links: iOS does not handle `ntfy://`
+  (observed: the camera says "No usable data found"), so QR codes and buttons use `https://<server>/<topic>` plus a
+  Copy topic button and manual steps; `ntfy://` is only an optional Android "Open in ntfy app" link. The `serve status --json` shape follows Tailscale's `ipn.ServeConfig`
   (github.com/tailscale/tailscale/blob/main/ipn/serve.go) and is parsed defensively; unknown shapes count as "in use".
   Whether Tailscale Serve forwards `Host` as `<machine>.<tailnet>.ts.net` and the exact `tailscale serve` flags are
   unverified (covered only by simulated-proxy tests). The loopback `Origin` check is still forgeable by local processes. A phone without

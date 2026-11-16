@@ -358,8 +358,12 @@ export function createAppServer(options: AppServerOptions): Server {
         const target = new URL(base);
         return sendJson(res, 200, {
           enabled: true,
+          // iOS's camera and Safari ignore ntfy:// (observed), so `web` (https) is the primary link; `link` is the
+          // optional "Open in ntfy app" deep link for Android.
           link: `ntfy://${target.host}${target.pathname.replace(/\/+$/, "")}/${phone.topic}`,
           web: `${base}/${phone.topic}`,
+          topic: phone.topic,
+          server: base,
         });
       }
 
@@ -401,6 +405,7 @@ export function createAppServer(options: AppServerOptions): Server {
         return sendJson(res, 200, {
           enabled: config.remote?.enabled === true,
           hosts: config.remote?.hosts ?? [],
+          managed: config.remote?.serve?.managed === true,
           port: port(),
         });
 
@@ -456,7 +461,12 @@ export function createAppServer(options: AppServerOptions): Server {
         config.remote = next;
         // Streams already open were authorised by the old settings: close those no longer allowed.
         dropRemoteStreams((info) => !next.enabled || !next.hosts.includes(info.host));
-        return sendJson(res, 200, { enabled: next.enabled, hosts: next.hosts, port: port() });
+        return sendJson(res, 200, {
+          enabled: next.enabled,
+          hosts: next.hosts,
+          managed: next.serve?.managed === true,
+          port: port(),
+        });
       }
 
       case "POST /api/events": {

@@ -105,6 +105,8 @@ export function useUnpairedWatch(active: boolean, onUnpaired: () => void): void 
 export interface RemoteSettings {
   enabled: boolean;
   hosts: string[];
+  /** AgentWatch created the Tailscale Serve mapping, so turning access off removes it. */
+  managed?: boolean;
   port: number;
 }
 
@@ -162,7 +164,10 @@ export const getServeStatus = () => call<ServeOutcome>("GET", "/api/setup/remote
 export const setServe = (action: "on" | "off") =>
   call<ServeOutcome>("POST", "/api/setup/remote/serve", { action });
 
-export type NtfyLink = { enabled: false } | { enabled: true; link: string; web: string };
+export type NtfyLink =
+  | { enabled: false }
+  /** `web` is the https link (works on iOS and Android); `link` is the ntfy:// deep link, Android only. */
+  | { enabled: true; link: string; web: string; topic: string; server: string };
 
 /** The ntfy subscription links for a paired phone (or this PC's dashboard). Never includes the access token. */
 export const getNtfyLink = () => call<NtfyLink>("GET", "/api/me/ntfy");

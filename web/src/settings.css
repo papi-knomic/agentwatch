@@ -986,3 +986,589 @@
 .aw .settings-card > h2 + .settings-facts {
   margin-top: 14px;
 }
+
+/* ================= Phone tab: feature cards, switch, push steps, devices ================= */
+.aw .settings-card.feature-card > * + * {
+  margin-top: 16px;
+}
+
+.aw .feature-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.aw .feature-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.aw .feature-head h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.aw .feature-head .settings-text {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.aw .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 18px;
+}
+
+.aw .pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.aw .pill-on {
+  background: color-mix(in srgb, var(--done) 15%, transparent);
+  color: var(--done);
+}
+
+.aw .pill-off {
+  background: var(--s3);
+  color: var(--mu);
+}
+
+.aw .switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 13px;
+  background: var(--s3);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.aw .switch.on {
+  border-color: var(--done);
+  background: var(--done);
+}
+
+.aw .switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.aw .switch:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--pri) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.aw .switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: transform 0.12s;
+}
+
+.aw .switch.on .switch-thumb {
+  transform: translateX(18px);
+}
+
+/* push: QR on the left, numbered steps on the right */
+.aw .push-grid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.aw .push-qr {
+  margin: 0;
+}
+
+.aw .push-qr .qr {
+  display: block;
+  width: 140px;
+  height: 140px;
+  border-width: 6px;
+}
+
+.aw .push-qr figcaption {
+  margin-top: 6px;
+  color: var(--fa);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.aw .ntfy-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--mu);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.aw .ntfy-steps li + li {
+  margin-top: 10px;
+}
+
+.aw .ntfy-steps li::marker {
+  color: var(--fa);
+  font-weight: 600;
+}
+
+.aw .ntfy-steps strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.aw .ntfy-steps a {
+  color: var(--fg);
+}
+
+.aw .ntfy-steps code {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--s2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.aw .seg {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 6px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+}
+
+.aw .seg button {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: calc(var(--r) - 2px);
+  background: transparent;
+  color: var(--mu);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.aw .seg button.on {
+  background: var(--s1);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--line2);
+  font-weight: 600;
+}
+
+/* fields */
+.aw .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aw .field > label,
+.aw .field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.aw .field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aw .field-row > input {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.aw .settings input.mono,
+.aw .host-text {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.aw .settings-card code.host-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  word-break: break-all;
+}
+
+.aw .settings .field > input {
+  max-width: none;
+}
+
+.aw .settings-card .field-hint {
+  margin: 0;
+  color: var(--fa);
+  font-size: 12px;
+}
+
+.aw .action-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.aw .result {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.aw .result.ok {
+  color: var(--done);
+}
+
+.aw .result.err {
+  color: var(--err);
+}
+
+/* checkbox rows: box inline on the left, description under the title */
+.aw .opt-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s2);
+  cursor: pointer;
+}
+
+.aw .opt-row input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+.aw .opt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aw .opt-title {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.aw .opt-desc {
+  color: var(--mu);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.aw .step-body .opt-row {
+  margin-bottom: 10px;
+}
+
+.aw .mini-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mu);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.aw .mini-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.aw .mini-disclosure > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid var(--fa);
+  border-bottom: 1.6px solid var(--fa);
+  transform: rotate(-45deg);
+  transition: transform 0.12s;
+}
+
+.aw .mini-disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.aw .mini-disclosure > summary:hover {
+  color: var(--fg);
+}
+
+.aw .mini-disclosure[open] > summary {
+  margin-bottom: 12px;
+}
+
+.aw .mini-disclosure .field + .field,
+.aw .mini-disclosure .field + .actions {
+  margin-top: 12px;
+}
+
+.aw .sub-head {
+  margin: 20px 0 -6px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.aw .settings-card .funnel-note {
+  margin: 16px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--need);
+  background: var(--need-t);
+  border-radius: 0 var(--r) var(--r) 0;
+  color: var(--mu);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.aw .inline-warn {
+  color: var(--need);
+  font-weight: 500;
+}
+
+/* pairing code box: QR beside its text */
+.aw .settings-card .pair-box {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.aw .pair-box .qr {
+  flex: none;
+  width: 150px;
+  height: 150px;
+  border-width: 6px;
+}
+
+.aw .pair-text {
+  min-width: 0;
+}
+
+.aw .pair-text p + p {
+  margin-top: 8px;
+}
+
+/* devices */
+.aw .device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.aw .device-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aw .settings input.device-name {
+  width: 100%;
+  max-width: 14rem;
+  height: 28px;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 600;
+  padding-inline: 6px;
+  margin-left: -6px;
+}
+
+.aw .settings input.device-name:hover {
+  border-color: var(--line2);
+}
+
+.aw .settings-card .device-seen {
+  flex: none;
+  padding-left: 0;
+  color: var(--fa);
+  font-size: 12px;
+}
+
+.aw .device-approve {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mu);
+  font-size: 12.5px;
+}
+
+/* paired phone: "Get notifications" panel under the banner */
+.aw .notify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 8px 0 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s1);
+  color: var(--mu);
+  font-size: 13px;
+}
+
+.aw .notify-panel .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aw .notify-panel .field-label {
+  color: var(--fg);
+}
+
+.aw .notify-panel code.host-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--s2);
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.aw .notify-panel a {
+  color: var(--fg);
+}
+
+@media (max-width: 480px) {
+  .aw .feature-head {
+    gap: 12px;
+  }
+
+  .aw .switch {
+    width: 52px;
+    height: 32px;
+    border-radius: 16px;
+  }
+
+  .aw .switch-thumb {
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .aw .switch.on .switch-thumb {
+    transform: translateX(20px);
+  }
+
+  .aw .push-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .aw .push-qr {
+    justify-self: center;
+  }
+
+  .aw .push-qr .qr {
+    width: 160px;
+    height: 160px;
+    max-width: none;
+    aspect-ratio: auto;
+  }
+
+  .aw .settings-card .pair-box {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .aw .pair-box .qr {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .aw .seg button {
+    height: 36px;
+  }
+
+  .aw .field-row {
+    flex-wrap: wrap;
+  }
+
+  .aw .field-row > input,
+  .aw .field-row > code {
+    flex: 1 1 100%;
+  }
+
+  .aw .field-row .btn,
+  .aw .notify-panel .btn {
+    flex: 1 1 auto;
+  }
+
+  .aw .mini-disclosure > summary {
+    min-height: 44px;
+  }
+
+  .aw .opt-row {
+    min-height: 44px;
+  }
+
+  .aw .device-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .aw .device-approve {
+    grid-column: 1;
+    min-height: 44px;
+    justify-content: space-between;
+  }
+
+  .aw .device-row .btn {
+    grid-column: 2;
+    grid-row: 2;
+    width: auto;
+  }
+
+  .aw .settings input.device-name {
+    height: 44px;
+    max-width: none;
+  }
+
+  .aw .notify-panel .btn {
+    height: 44px;
+  }
+}
