@@ -37,6 +37,8 @@ import { spawn } from "node:child_process";
 
 const HOOK = ${JSON.stringify(commandArgv(hookCommand))};
 const MAX_TEXT = 500;
+// The task title is at most the first line of the first prompt, cut to 80 characters (AGENTS.md hard rule 4).
+const MAX_PROMPT_TITLE = 80;
 
 const V1_FORWARDED = new Set([
   "session.status",
@@ -65,10 +67,17 @@ const V2_FORWARDED = [
   "form.cancelled",
 ];
 // Remembered for titles, subagents and folders, never sent on their own.
-const V2_TRACKED = ["session.created", "session.renamed"];
+const V2_TRACKED = ["session.created", "session.renamed", "session.inbox.enqueued"];
 
 function text(value) {
   return typeof value === "string" ? value.slice(0, MAX_TEXT) : undefined;
+}
+
+// Only the first non-empty line, and only as much as a title can hold: prompts never travel further.
+function firstLine(value) {
+  if (typeof value !== "string") return undefined;
+  const line = value.split(/\\r?\\n/).map((part) => part.trim()).find((part) => part.length > 0);
+  return line ? line.slice(0, MAX_PROMPT_TITLE) : undefined;
 }
 
 function pickStatus(status) {
@@ -138,6 +147,10 @@ function createReporter(defaultDirectory) {
   const lastSent = new Map();
   // 1.x per session: the error that ended the current turn. OpenCode 1.x follows it with session.idle.
   const lastError = new Map();
+  // 1.x: user message ids and the text of text parts, by message id. Parts can arrive before their message, and
+  // the role is only on the message, so both are kept (bounded) until they meet.
+  const userMessages = new Map();
+  const partTexts = new Map();
 
   function remember(id, info) {
     if (typeof id !== "string") return;
@@ -173,6 +186,7 @@ function createReporter(defaultDirectory) {
     const rootInfo = sessions.get(root);
     if (rootInfo && rootInfo.directory) payload.directory = rootInfo.directory;
     if (rootInfo && rootInfo.title) payload.title = text(rootInfo.title);
+    if (rootInfo && rootInfo.prompt) payload.prompt = rootInfo.prompt;
     if (typeof payload.directory !== "string") return;
 
     if (type === "session.deleted") {
@@ -180,11 +194,34 @@ function createReporter(defaultDirectory) {
       lastSent.delete(sessionID);
       lastError.delete(sessionID);
     } else {
-      const key = [type, status.type, status.attempt, payload.title].join("|");
+      const key = [type, status.type, status.attempt, payload.title, payload.prompt].join("|");
       if (lastSent.get(sessionID) === key) return;
       lastSent.set(sessionID, key);
     }
     send(payload);
+  }
+
+  function bounded(map, key, value) {
+    map.set(key, value);
+    if (map.size > 200) map.delete(map.keys().next().value);
+  }
+
+  // The first user prompt names a session until OpenCode generates a title (it can fail, or never run for
+  // sessions driven over the HTTP API). Child sessions are skipped later: a root's title comes from its own prompt.
+  function trackV1Prompt(type, p) {
+    const info = type === "message.updated" ? p.info : undefined;
+    const part = type === "message.part.updated" ? p.part : undefined;
+    if (info && info.role === "user" && typeof info.id === "string") bounded(userMessages, info.id, p.sessionID || info.sessionID);
+    if (part && part.type === "text" && !part.synthetic && !part.ignored && typeof part.messageID === "string") {
+      if (!partTexts.has(part.messageID)) bounded(partTexts, part.messageID, part.text);
+      else if (typeof part.text === "string" && part.text) partTexts.set(part.messageID, part.text);
+    }
+    const id = info ? info.id : part && part.messageID;
+    const sessionID = userMessages.get(id);
+    const line = firstLine(partTexts.get(id));
+    if (typeof sessionID !== "string" || !line) return;
+    const known = sessions.get(sessionID);
+    if (!known || !known.prompt) remember(sessionID, { prompt: line });
   }
 
   function v1(event) {
@@ -193,6 +230,10 @@ function createReporter(defaultDirectory) {
     if (type === "session.created" || type === "session.updated") {
       const info = p.info || {};
       remember(info.id, { parentID: info.parentID, directory: info.directory, title: info.title });
+      return;
+    }
+    if (type === "message.updated" || type === "message.part.updated") {
+      trackV1Prompt(type, p);
       return;
     }
     if (!V1_FORWARDED.has(type)) return;
@@ -218,6 +259,12 @@ function createReporter(defaultDirectory) {
     }
     if (type === "session.renamed") {
       remember(d.sessionID, { title: d.title });
+      return;
+    }
+    if (type === "session.inbox.enqueued") {
+      const item = d.item || {};
+      const known = sessions.get(d.sessionID);
+      if (item.type === "user" && (!known || !known.prompt)) remember(d.sessionID, { prompt: firstLine(item.payload && item.payload.text) });
       return;
     }
     if (!V2_FORWARDED.includes(type)) return;

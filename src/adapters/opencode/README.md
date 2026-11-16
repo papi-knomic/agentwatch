@@ -75,6 +75,7 @@ The envelope: `{ v, event, directory, pid, at, title?, rootSessionID?, afterErro
 | `question.asked` | `needs_input` | Message: "Has a question for you" (the question text is not sent). |
 | `question.replied`, `question.rejected` | `working` | |
 | `session.created`, `session.updated` | — | Only remembered by the plugin: directory, title, `parentID`. |
+| `message.updated`, `message.part.updated` | — | Only remembered: the first user prompt's first line (title fallback). Captured 1.19.3 via `opencode serve` + `prompt_async`. |
 
 ## OpenCode 2.x events
 
@@ -91,6 +92,7 @@ The envelope: `{ v, event, directory, pid, at, title?, rootSessionID?, afterErro
 | `form.created` | `needs_input` | The question tool asks through a form (`metadata.kind: "question"`); the session is `form.sessionID`. Message: "Has a question for you". Forms owned by `"global"` (MCP elicitation) are ignored. |
 | `form.replied`, `form.cancelled` | `working` | |
 | `session.created`, `session.renamed` | — | Only remembered by the plugin: `location.directory`, `title`, `parentID`. |
+| `session.inbox.enqueued` | — | Only remembered: a `user` item's `payload.text` first line (title fallback). Shape from the 2.2.6 schema, not captured. |
 
 `question.*` events and `session.error` no longer exist in 2.x, and `session.idle` is deprecated.
 
@@ -99,8 +101,15 @@ The envelope: `{ v, event, directory, pid, at, title?, rootSessionID?, afterErro
 - **Session id and folder:** OpenCode's `sessionID` and the session's directory (1.x `info.directory`, 2.x
   `location.directory`), falling back to the plugin's own directory.
 - **Title:** OpenCode names each session itself (e.g. `Add word to hello.txt`) and the plugin attaches the latest
-  name to the next event it sends, with `titleSource: "tool"`. 1.x's placeholder `New session - <ISO time>` is
-  ignored. A rename while idle shows with the next activity.
+  name to the next event it sends, with `titleSource: "tool"`. The placeholder `New session - <ISO time>` (also 2.x
+  `session.created` without a title) is ignored. A rename while idle shows with the next activity. Until a real name
+  exists, the first line of the session's first user prompt (at most 80 characters, from 1.x `message.updated` role
+  `user` plus its non-synthetic `message.part.updated` text part; 2.x `session.inbox.enqueued` item `user`) is sent as
+  `prompt` and shown as a prompt-derived title, which OpenCode's own name replaces later. This matters because OpenCode
+  generates the name with a small-model call that can fail or land after the last event of a turn, and UIs that
+  drive OpenCode over its HTTP API (e.g. OpenChamber, which targets the 2.x API: `session.create({ title?, location })`)
+  often create sessions without a title. `taskTitles: false` drops both in the hook. Only plugins installed after
+  this change send `prompt`: re-run `agentwatch install --tool opencode` and restart OpenCode.
 - **Subagents** run in child sessions (`parentID`). Their own lifecycle is ignored, because the parent is busy
   throughout. Their permission prompts and questions are shown on the top-level session (`rootSessionID`).
 - **Host:** from the environment of the process running the plugin, e.g. `WT_SESSION` → "Windows Terminal".
@@ -115,7 +124,7 @@ The envelope: `{ v, event, directory, pid, at, title?, rootSessionID?, afterErro
 2026-10-20), with paths replaced: `session-created`, `session-updated-title`, `session-status-busy`,
 `session-status-idle`, `session-idle`, `permission-asked-edit`, `permission-asked-bash`, `permission-replied-once`,
 `permission-replied-reject`, `question-asked`, `question-replied`. Constructed from the SDK types (didn't fire):
-`session-status-retry`, `session-error`, `session-error-aborted`, `session-deleted`, `session-created-child`,
+`message-updated-user`, `message-part-updated-user-text` (captured, text changed), `session-status-retry`, `session-error`, `session-error-aborted`, `session-deleted`, `session-created-child`,
 `question-rejected`, `permission-updated`.
 
 `fixtures/v2/`. Real captured payloads (OpenCode 2.2.6 TUI in Windows Terminal with its background service, OpenAI
@@ -123,11 +132,13 @@ via a ChatGPT login, 2026-11-09), with paths replaced: `session-created`, `sessi
 `session-execution-started`, `session-execution-succeeded`, `session-execution-interrupted-shutdown`,
 `permission-asked-edit`, `permission-asked-shell`, `permission-replied-once`, `permission-replied-reject`,
 `form-created`, `form-replied`. Constructed from the 2.2.6 schemas (didn't fire): `session-execution-failed`,
-`session-execution-interrupted-user`, `session-execution-interrupted-superseded`, `session-status-busy`,
+`session-execution-interrupted-user`, `session-execution-interrupted-superseded`, `session-inbox-enqueued-user`, `session-status-busy`,
 `session-status-idle`, `session-status-retry`, `session-deleted`, `session-created-child`, `form-cancelled`,
 `form-created-global`.
 
 ## Known gaps
+
+- **OpenChamber** (https://github.com/openchamber/openchamber, `packages/ui/src/lib/opencode/client.ts`) was not run here. Checked with a headless 1.19.3 server (`opencode serve`, session created and prompted over HTTP) that the plugin sees the same events as in the TUI. Its 2.x path is read from source only. A title that OpenCode generates after the turn's last event shows only with the next event.
 
 - **2.x background service:** by default OpenCode 2.x runs sessions, and plugins, in a shared background service
   (`opencode serve --service`) that keeps running after you quit the TUI (`--standalone` runs a private one). So

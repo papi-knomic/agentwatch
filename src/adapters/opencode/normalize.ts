@@ -173,6 +173,14 @@ export function normalizeOpenCode(raw: unknown, ctx: NormalizeContext): AgentEve
   if (title) {
     event.title = title;
     event.titleSource = "tool";
+  } else {
+    // OpenCode hasn't named the session (placeholder, or the generator failed or never ran, as when a UI such as
+    // OpenChamber drives it over HTTP): the first line of the first prompt fills in until it does. No
+    // titleSource, so the store lets a later tool title replace it.
+    const prompt = str(raw.prompt)
+      ?.split(/\r?\n/)
+      .find((line) => line.trim().length > 0);
+    if (prompt) event.title = truncateTitle(prompt.trim());
   }
   // The OpenCode process: when it exits, the server drops its sessions (OpenCode sends no event on quit).
   const pid = parsePid(raw.pid) ?? parsePid(ctx.env.OPENCODE_PID);

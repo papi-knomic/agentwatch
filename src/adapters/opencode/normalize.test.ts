@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SessionStore } from "../../core/store.js";
+import type { AgentEvent } from "../../core/types.js";
 import { normalizeOpenCode } from "./normalize.js";
 
 interface BusEvent {
@@ -54,6 +56,8 @@ describe("normalizeOpenCode", () => {
     "session-created.json",
     "session-updated-title.json",
     "session-error-aborted.json",
+    "message-updated-user.json",
+    "message-part-updated-user-text.json",
   ])("ignores %s", (file) => {
     expect(normalizeOpenCode(envelope(file), ctx)).toBeNull();
   });
@@ -93,6 +97,67 @@ describe("normalizeOpenCode", () => {
     expect(
       normalizeOpenCode(envelope("session-idle.json", { afterError: "MessageAbortedError" }), ctx),
     ).toMatchObject({ status: "idle", message: "Interrupted" });
+  });
+
+  it("names a session from its first prompt while OpenCode has only the placeholder", () => {
+    const placeholder = "New session - 2026-10-20T00:56:10.149Z";
+    const prompt = "Add the word world to hello.txt";
+    const fromPrompt = normalizeOpenCode(
+      envelope("session-status-busy.json", { title: placeholder, prompt }),
+      ctx,
+    );
+    expect(fromPrompt?.title).toBe(prompt);
+    // Prompt-derived: no titleSource, so a later tool title can replace it in the store.
+    expect(fromPrompt?.titleSource).toBeUndefined();
+    expect(normalizeOpenCode(envelope("session-status-busy.json", { prompt }), ctx)?.title).toBe(prompt);
+    expect(
+      normalizeOpenCode(envelope("session-status-busy.json", { prompt: "\n  \nsecond line\nthird" }), ctx)
+        ?.title,
+    ).toBe("second line");
+    expect(
+      normalizeOpenCode(envelope("session-status-busy.json", { prompt: "y".repeat(300) }), ctx)?.title
+        ?.length,
+    ).toBeLessThanOrEqual(80);
+  });
+
+  it("prefers OpenCode's real title over the prompt", () => {
+    const event = normalizeOpenCode(
+      envelope("session-status-busy.json", { title: "Add word to hello.txt", prompt: "Add the word world" }),
+      ctx,
+    );
+    expect(event).toMatchObject({ title: "Add word to hello.txt", titleSource: "tool" });
+  });
+
+  it("replaces the prompt title once OpenCode's own title arrives, in the store", () => {
+    const store = new SessionStore();
+    const first = normalizeOpenCode(
+      envelope("session-status-busy.json", {
+        title: "New session - 2026-10-20T00:56:10.149Z",
+        prompt: "Add world",
+      }),
+      ctx,
+    );
+    store.apply(first as AgentEvent);
+    expect(store.list()[0]?.title).toBe("Add world");
+    const later = normalizeOpenCode(
+      envelope("session-idle.json", {
+        title: "Add word to hello.txt",
+        prompt: "Add world",
+        at: "2026-10-20T00:56:30.000Z",
+      }),
+      ctx,
+    );
+    store.apply(later as AgentEvent);
+    expect(store.list()[0]).toMatchObject({ title: "Add word to hello.txt", titleSource: "tool" });
+  });
+
+  it("has no title when there is neither a real title nor a prompt", () => {
+    expect(
+      normalizeOpenCode(
+        envelope("session-status-busy.json", { title: "New session - 2026-10-20T00:56:10.149Z" }),
+        ctx,
+      )?.title,
+    ).toBeUndefined();
   });
 
   it("uses OpenCode's own session title, but not its placeholder", () => {
@@ -181,6 +246,7 @@ describe("normalizeOpenCode, OpenCode 2.x", () => {
     "session-status-idle.json",
     "session-created.json",
     "session-renamed.json",
+    "session-inbox-enqueued-user.json",
     "session-execution-interrupted-superseded.json",
     "form-created-global.json",
   ])("ignores %s", (file) => {
