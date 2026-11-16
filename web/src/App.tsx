@@ -17,7 +17,7 @@ import {
   statusSince,
 } from "./board";
 import { DecisionPanel } from "./DecisionPanel";
-import { NotPaired, PairPage } from "./PairPage";
+import { GetNotifications, NotPaired, PairPage } from "./PairPage";
 import { type Me, pairCodeFromHash, useMe, useUnpairedWatch } from "./remote";
 import { SetupPanel } from "./SetupPanel";
 import { useSetup } from "./setup";
@@ -174,6 +174,7 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
       </header>
 
       <main className="content">
+        {remote && <GetNotifications />}
         {sessions.length === 0 ? (
           readySetup ? (
             <SetupPanel setup={readySetup} onSetup={replaceSetup} prominent />

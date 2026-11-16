@@ -112,7 +112,7 @@ export function RemoteAccess() {
 
   const host = settings.hosts[0];
   const pairUrl = pair && host ? `https://${host}/#pair=${pair.code}` : null;
-  const command = `tailscale serve --bg ${settings.port}`;
+  const command = `tailscale serve --bg --yes --https=443 http://127.0.0.1:${settings.port}`;
 
   const copy = async (text: string) => {
     try {
@@ -175,7 +175,7 @@ export function RemoteAccess() {
         {enabled && (
           <>
             <p>
-              Run this once on this PC (check <code>tailscale serve --help</code> if your version differs):{" "}
+              The "Set up phone" panel above runs this for you. To do it by hand, run this once on this PC:{" "}
               <code>{command}</code>{" "}
               <button type="button" className="text-button" onClick={() => void copy(command)}>
                 {copied ? "Copied" : "Copy"}
@@ -231,7 +231,7 @@ export function RemoteAccess() {
   );
 }
 
-function DeviceRow({
+export function DeviceRow({
   device,
   onChange,
   onError,

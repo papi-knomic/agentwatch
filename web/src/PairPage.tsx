@@ -1,6 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { APP_DISPLAY_NAME } from "../../src/core/constants.js";
-import { clearHash, defaultDeviceName, pairDevice } from "./remote";
+import {
+  clearHash,
+  defaultDeviceName,
+  getNtfyLink,
+  NTFY_APP_STORE_URL,
+  NTFY_PLAY_URL,
+  type NtfyLink,
+  pairDevice,
+} from "./remote";
 
 /** What a phone shows after scanning the QR code from the dashboard on the PC. */
 export function PairPage({ code, onPaired }: { code: string; onPaired: () => void }) {
@@ -65,5 +73,57 @@ export function NotPaired() {
         </p>
       </div>
     </main>
+  );
+}
+
+const HIDE_KEY = "agentwatch.hideNtfyBanner";
+
+/**
+ * "Get notifications": one tap opens the ntfy app subscribed to this PC's topic (ntfy:// deep link; documented for
+ * Android, iOS handling unverified, so the store links stay visible). Renders nothing when ntfy is off.
+ */
+export function GetNotifications() {
+  const [ntfy, setNtfy] = useState<NtfyLink | null>(null);
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return window.localStorage.getItem(HIDE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    getNtfyLink()
+      .then(setNtfy)
+      .catch(() => setNtfy(null));
+  }, []);
+  if (!ntfy?.enabled || hidden) return null;
+  const hide = () => {
+    setHidden(true);
+    try {
+      window.localStorage.setItem(HIDE_KEY, "1");
+    } catch {
+      // Private mode: the banner just comes back next time.
+    }
+  };
+  return (
+    <div className="ntfy-banner">
+      <a className="primary-button remote-big" href={ntfy.link}>
+        Get notifications
+      </a>
+      <p className="remote-hint">
+        Opens the ntfy app and subscribes. Not installed yet?{" "}
+        <a href={NTFY_PLAY_URL} target="_blank" rel="noreferrer">
+          Google Play
+        </a>{" "}
+        ·{" "}
+        <a href={NTFY_APP_STORE_URL} target="_blank" rel="noreferrer">
+          App Store
+        </a>{" "}
+        ·{" "}
+        <button type="button" className="text-button" onClick={hide}>
+          Hide
+        </button>
+      </p>
+    </div>
   );
 }

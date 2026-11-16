@@ -1458,3 +1458,28 @@ button {
   resize: vertical;
   font: inherit;
 }
+
+.phone-advanced {
+  margin-top: 12px;
+}
+
+.phone-advanced > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.phone-paired {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ntfy-banner {
+  margin-bottom: 16px;
+}
+
+.ntfy-banner a.primary-button {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+}

@@ -181,8 +181,10 @@ API for permissions, both possible later.
 Get a push on your phone when an agent needs you or finishes, even away from your computer. It uses
 [ntfy](https://ntfy.sh), a free push service, and is **off by default**.
 
+The quickest way is *Agents → Set up phone* (see "Use AgentWatch from your phone"). Manually:
+
 1. Install the ntfy app on your phone (Android, iOS).
-2. On this computer's dashboard, open *Agents → Phone notifications (ntfy)* and turn it on. A random topic is
+2. On this computer's dashboard, open *Agents → Phone: advanced settings → Phone notifications (ntfy)* and turn it on. A random topic is
    generated for you. (The same switch lives in `config.json` under `phone`.)
 3. In the ntfy app, subscribe to that topic (use the same server if you changed it).
 4. Press **Send test**, or run `agentwatch notify-test --phone`.
@@ -253,16 +255,22 @@ Off by default. You can watch your sessions (and, per phone, answer prompts) fro
 HTTPS. AgentWatch itself still listens on 127.0.0.1 only; Tailscale Serve is a proxy you run, and nothing is
 exposed to the internet.
 
-1. Install Tailscale on the PC and the phone and sign in to the same tailnet. In the Tailscale admin console, enable
-   MagicDNS and HTTPS certificates ([docs](https://tailscale.com/kb/1153/enabling-https)).
-2. In the dashboard open **Agents** > **Phone (remote access)**, press **Detect** (or type your machine name, for example
-   `mybox.tail1234.ts.net`), and **Turn on**.
-3. In a terminal on the PC run `tailscale serve --bg <port>` (the dashboard shows the exact command with your port,
-   7878 by default). The flags differ between Tailscale versions: check `tailscale serve --help`.
-4. Press **Pair a phone** and scan the QR code with the phone's camera (Tailscale must be on there). Name the phone.
-   The code works once and expires after 2 minutes.
-5. The phone now shows the dashboard. To let it approve Claude Code prompts, tick **Allow approvals** for that phone in the
-   same list on the PC. Without it the phone can only watch and dismiss. **Revoke** removes a phone at once.
+Open **Agents** > **Set up phone** on the PC's dashboard and follow the three steps:
+
+1. **On this PC:** press **Turn on phone access**. AgentWatch checks Tailscale and runs
+   `tailscale serve --bg --yes --https=443 http://127.0.0.1:<port>` for you, only when you press the button. If
+   Tailscale isn't installed or signed in, the panel says so. If your tailnet hasn't enabled HTTPS yet, it shows a link to
+   Tailscale's page for that; enable it and press the button again. If port 443 already serves something else, AgentWatch
+   won't touch it.
+2. **On your phone:** install Tailscale (same account as the PC) and, for notifications, the ntfy app (links in the panel).
+3. **Pair:** keep **Send notifications to this phone** ticked (it turns on ntfy with a fresh random topic on ntfy.sh and
+   generic text only), press **Show pairing code**, scan the QR code with the phone's camera and name the phone. On the phone
+   tap **Get notifications** to open ntfy subscribed to your topic. The panel shows "Paired: <name>".
+
+To let a phone approve Claude Code prompts, tick **Allow approvals** for it in the same panel. Without it the phone can
+only watch and dismiss. **Revoke** removes a phone at once. **Turn off phone access** disables remote access and, only if
+AgentWatch created the Serve mapping and it still points at AgentWatch, runs `tailscale serve --https=443 off`. Anything
+else you set up in Tailscale is left alone. The old manual settings are under *Phone: advanced settings*.
 
 Never use **Tailscale Funnel** for this: it publishes the dashboard on the public internet. AgentWatch only supports Serve.
 Remote requests need a device cookie from pairing (stored hashed in `~/.agentwatch/devices.json`); the token is never
@@ -278,7 +286,9 @@ service its own machine name. Turning remote access off, removing a host or revo
 connections immediately.
 
 Not verified against a live tailnet: that Serve forwards the `Host` header as `<machine>.<tailnet>.ts.net` (AgentWatch
-refuses the request otherwise) and the exact `tailscale serve` syntax of your version.
+refuses the request otherwise), what the Tailscale CLI prints when HTTPS isn't enabled yet (we look for a
+`https://login.tailscale.com/` link), and whether the `ntfy://` link opens the ntfy app on iOS (documented for Android
+only; the store links stay on screen). The `serve status --json` shape follows Tailscale's `ipn.ServeConfig` source.
 
 ## Troubleshooting
 
@@ -324,7 +334,7 @@ the session switches to "working · Running approved command", usually within a 
 
 ## Limitations
 
-- Phone access needs Tailscale Serve set up by you and has only been tested against a simulated proxy (see above).
+- Phone access runs Tailscale Serve for you on a click, but has only been tested against a simulated proxy and a fake CLI (see above).
 - Answering prompts from the dashboard is Claude Code only and opt-in. Whether Claude Code's own dialog stays visible
   while the hook waits is unverified.
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach your local dashboard.

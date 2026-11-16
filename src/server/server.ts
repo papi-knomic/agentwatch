@@ -16,6 +16,7 @@ import {
   PairingCodes,
   type PairingOptions,
 } from "./devices.js";
+import type { ServeController, ServeOutcome } from "./serve.js";
 import { type SetupService, UnknownToolError } from "./setup.js";
 import { serveStatic } from "./static.js";
 
@@ -52,6 +53,8 @@ export interface AppServerOptions {
   saveRemote?: (remote: RemoteConfig) => Promise<void>;
   /** Finds this machine's Tailscale name, for the "Detect" button. */
   detectHost?: () => Promise<string | null>;
+  /** Runs Tailscale Serve for the wizard (loopback dashboard only, explicit clicks). */
+  serve?: ServeController;
   /** Called after answering POST /api/shutdown (`agentwatch stop`). */
   onShutdown?: () => void;
   /** Presence timings in ms; only tests change these. */
@@ -270,6 +273,20 @@ export function createAppServer(options: AppServerOptions): Server {
       case "GET /api/stream":
         return stream(req, res, url, device, remoteHost);
 
+      case "GET /api/me/ntfy": {
+        // Paired phones (device cookie, checked above) and the loopback dashboard may read the topic so one tap can
+        // subscribe the ntfy app. The access token is never part of this.
+        const phone = options.phone?.get();
+        if (!phone?.enabled || !phone.topic) return sendJson(res, 200, { enabled: false });
+        const base = phone.server.replace(/\/+$/, "");
+        const target = new URL(base);
+        return sendJson(res, 200, {
+          enabled: true,
+          link: `ntfy://${target.host}${target.pathname.replace(/\/+$/, "")}/${phone.topic}`,
+          web: `${base}/${phone.topic}`,
+        });
+      }
+
       case "GET /api/me":
         return sendJson(
           res,
@@ -317,6 +334,27 @@ export function createAppServer(options: AppServerOptions): Server {
         return sendJson(res, 200, { host: (await options.detectHost?.()) ?? null });
       }
 
+      case "GET /api/setup/remote/serve": {
+        localOnly();
+        if (!options.serve) throw new HttpError(404, "Not found");
+        const outcome = await options.serve.status(port());
+        // A mapping that is there while AgentWatch's remote switch is off still needs the (idempotent) turn-on click.
+        if (outcome.state === "on" && config.remote?.enabled !== true) outcome.state = "off";
+        return sendJson(res, 200, outcome);
+      }
+
+      case "POST /api/setup/remote/serve": {
+        // Runs the Tailscale CLI on this PC: same guards as the other setup writes, never through the proxy.
+        localOnly();
+        if (!sameOrigin) throw new HttpError(403, "Forbidden");
+        if (!options.serve) throw new HttpError(404, "Not found");
+        const body = await readJsonBody(req);
+        const action =
+          typeof body === "object" && body !== null ? (body as { action?: unknown }).action : null;
+        if (action !== "on" && action !== "off") throw new HttpError(400, "action must be on or off");
+        return sendJson(res, 200, await serveAction(action, options.serve));
+      }
+
       case "POST /api/setup/remote": {
         localOnly();
         if (!sameOrigin) throw new HttpError(403, "Forbidden");
@@ -328,7 +366,11 @@ export function createAppServer(options: AppServerOptions): Server {
         const hosts = record.hosts.map(normalizeRemoteHost);
         if (hosts.some((h) => h === null))
           throw new HttpError(400, "Enter a host like mybox.tail1234.ts.net");
-        const next: RemoteConfig = { enabled: record.enabled, hosts: [...new Set(hosts as string[])] };
+        const next: RemoteConfig = {
+          enabled: record.enabled,
+          hosts: [...new Set(hosts as string[])],
+          ...(config.remote?.serve ? { serve: config.remote.serve } : {}),
+        };
         if (next.enabled && next.hosts.length === 0) throw new HttpError(400, "Add the host first");
         try {
           await options.saveRemote?.(next);
@@ -544,6 +586,48 @@ export function createAppServer(options: AppServerOptions): Server {
         return serveStatic(options.staticDir, url.pathname, res);
       }
     }
+  }
+
+  // One Serve command at a time: two clicks must not race each other or the config write.
+  let serveQueue: Promise<unknown> = Promise.resolve();
+
+  function serveAction(action: "on" | "off", serve: ServeController): Promise<ServeOutcome> {
+    const run = serveQueue.then(() => runServeAction(action, serve));
+    serveQueue = run.catch(() => {});
+    return run;
+  }
+
+  async function saveRemoteConfig(next: RemoteConfig): Promise<void> {
+    try {
+      await options.saveRemote?.(next);
+    } catch (error) {
+      throw new HttpError(500, error instanceof Error ? error.message : String(error));
+    }
+    config.remote = next;
+    dropRemoteStreams((info) => !next.enabled || !next.hosts.includes(info.host));
+  }
+
+  async function runServeAction(action: "on" | "off", serve: ServeController): Promise<ServeOutcome> {
+    const current: RemoteConfig = config.remote ?? { enabled: false, hosts: [] };
+    if (action === "on") {
+      const outcome = await serve.on(port());
+      if (outcome.state !== "on" || !outcome.host) return outcome;
+      const hosts = [outcome.host, ...current.hosts.filter((h) => h !== outcome.host)].slice(0, 5);
+      // A mapping that was already there when we looked is the user's, not ours to remove later.
+      const managed = current.serve?.managed === true || outcome.created === true;
+      await saveRemoteConfig({
+        enabled: true,
+        hosts,
+        ...(managed ? { serve: { managed: true, https: 443 } } : {}),
+      });
+      return outcome;
+    }
+    const outcome = await serve.off(port(), current.serve?.managed === true);
+    // Off means off here even if Tailscale refused to drop its mapping (the message says so); then we keep the
+    // "managed" record so a later Turn off can retry.
+    const keepServe = outcome.state === "error" && current.serve ? { serve: current.serve } : {};
+    await saveRemoteConfig({ enabled: false, hosts: current.hosts, ...keepServe });
+    return outcome;
   }
 
   async function registerDecision(body: unknown, res: ServerResponse): Promise<void> {

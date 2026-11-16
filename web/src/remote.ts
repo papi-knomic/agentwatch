@@ -139,3 +139,34 @@ export const updateDevice = (id: string, patch: { name?: string; allowApprovals?
   call<{ device: PairedDevice }>("POST", `/api/devices/${encodeURIComponent(id)}`, patch);
 export const revokeDevice = (id: string) =>
   call<{ ok: true }>("DELETE", `/api/devices/${encodeURIComponent(id)}`);
+
+export type ServeState =
+  | "not_installed"
+  | "logged_out"
+  | "needs_consent"
+  | "port_in_use"
+  | "on"
+  | "off"
+  | "error";
+
+/** Result of the PC-side "turn on phone access" step (mirrors src/server/serve.ts). */
+export interface ServeOutcome {
+  state: ServeState;
+  host?: string;
+  consentUrl?: string;
+  message?: string;
+  turnedOff?: boolean;
+}
+
+export const getServeStatus = () => call<ServeOutcome>("GET", "/api/setup/remote/serve");
+export const setServe = (action: "on" | "off") =>
+  call<ServeOutcome>("POST", "/api/setup/remote/serve", { action });
+
+export type NtfyLink = { enabled: false } | { enabled: true; link: string; web: string };
+
+/** The ntfy subscription links for a paired phone (or this PC's dashboard). Never includes the access token. */
+export const getNtfyLink = () => call<NtfyLink>("GET", "/api/me/ntfy");
+
+export const NTFY_PLAY_URL = "https://play.google.com/store/apps/details?id=io.heckel.ntfy";
+export const NTFY_APP_STORE_URL = "https://apps.apple.com/us/app/ntfy/id1625396347";
+export const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";

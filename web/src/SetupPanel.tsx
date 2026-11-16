@@ -1,5 +1,6 @@
 import { type CSSProperties, useState } from "react";
 import { PhoneNotifications } from "./PhoneSettings";
+import { PhoneWizard } from "./PhoneWizard";
 import { RemoteAccess } from "./RemoteAccess";
 import { type ConnectResult, connectTool, type Setup, type SetupTool, setRemoteActions } from "./setup";
 
@@ -64,8 +65,12 @@ export function SetupPanel(props: { setup: Setup; onSetup: (setup: Setup) => voi
           {setup.remoteActions.supported && (
             <RemoteActionsRow remote={setup.remoteActions} onSetup={onSetup} />
           )}
-          <PhoneNotifications />
-          <RemoteAccess />
+          <PhoneWizard />
+          <details className="phone-advanced">
+            <summary>Phone: advanced settings</summary>
+            <PhoneNotifications />
+            <RemoteAccess />
+          </details>
           {setup.notes.length > 0 && (
             <ul className="setup-notes">
               {setup.notes.map((note) => (
