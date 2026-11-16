@@ -93,6 +93,15 @@ describe("setup service", () => {
       return { setup, saved, config };
     }
 
+    it("only touches tools that are already connected, so Codex's config isn't created for a Claude-only user", async () => {
+      const { setup } = remoteService();
+      await setup.connect("claude-code", false);
+      const result = await setup.setRemoteActions(true, false);
+      expect(result.results.map((r) => r.id)).toEqual(["claude-code"]);
+      expect(result.setup.remoteActions.tools).toEqual(["Claude Code"]);
+      expect(result.setup.tools.find((t) => t.id === "codex")?.connected).toBe(false);
+    });
+
     it("writes the flag even when the in-memory config already agrees (the file may differ)", async () => {
       const { setup, saved, config } = remoteService();
       Object.assign(config, { remoteActions: true });
@@ -131,7 +140,7 @@ describe("setup service", () => {
         supported: true,
         enabled: false,
         installed: false,
-        tools: ["Claude Code"],
+        tools: ["Claude Code", "Codex"],
         backgroundHold: "full",
       });
 

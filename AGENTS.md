@@ -147,6 +147,8 @@ same change.
    - `meta.ts`: id, display name, default icon/colour/sound
    - `normalize.ts`: converts the tool's raw hook event into `AgentEvent`
    - `install.ts`: installs/uninstalls the hook (following hard rule 5)
+   - `decide.ts` (only for tools that can be answered from the dashboard, with `meta.remoteActions`): the `Adapter.decide`
+     capability, `parse(payload, env)` and `buildOutput(request, resolution)`; the generic flow is in `src/cli/decide.ts`
    - `fixtures/`: real captured hook payloads and sample config files
    - `README.md`: link to the official docs, which events are supported, known gaps
 2. Register it in `src/adapters/index.ts`. Core code must not import anything tool-specific.
@@ -183,6 +185,11 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 
 ## Known limitations (keep up to date)
 
+- Codex: subagents share the parent's `session_id`; `agent_id` (PreToolUse/PostToolUse/PermissionRequest/SubagentStart/
+  SubagentStop, per the generated schemas, not yet captured) becomes `agentId`, and `SubagentStop` finishes only that
+  agent. Dashboard answering: `PermissionRequest` only (no hook for questions or plans), via a separate synchronous
+  `decide --tool codex` entry (timeout 600) that never sends `updatedInput`/`updatedPermissions`/`interrupt` (they fail
+  closed); blocking host class; unverified against a live Codex. Re-run `install --remote-actions` and approve in `/hooks`.
 - Codex: uses lifecycle hooks (not `notify`). New hooks must be trusted in Codex via `/hooks` before they run. There is no
   event for API-error stops. Desktop hooks are verified; chats loaded before installation may need an app restart.
   Async questions stay needs_input until the next user prompt; blocking questions and individual simultaneous
@@ -192,6 +199,10 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 - Grok: payloads verified by capture (Grok 1.0.34): `hookEventName` is snake_case, with Claude-style duplicates, and an
   extra `stop` (reason `shutdown`) arrives after `session_end`. Permission prompts arrive as `Notification` with
   `notificationType: "permission_prompt"` (captured); idle pings ("Waiting for your next prompt") are ignored.
+  Payloads with `subagentType` (from Grok's embedded docs, not captured) are dropped so a subagent can't change the
+  parent's status, except a needs-input Notification, kept as an unattributed wait. `task_complete` is not mapped.
+  No dashboard answering: Grok has no PermissionRequest event, and `PreToolUse` `allow` only means "not blocked", it
+  never approves a pending prompt (`allow`/`ask`/`defer` exist, but none answer the prompt).
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.
@@ -214,8 +225,8 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   1.x must be restarted to load it. No event on quit: sessions go when the plugin's pid exits, but 2.x runs plugins
   in a background service that outlives the TUI, so 2.x sessions expire instead. 2.2.6 ends a turn after a rejected
   permission with `execution.interrupted` reason `shutdown`. Errors, retries, Esc and subagents weren't captured.
-- Remote actions (answer from the dashboard; Claude Code only, opt-in): `PermissionRequest` and `PreToolUse`
-  (`AskUserQuestion`) hooks run `agentwatch decide`, which registers a pending decision with the server
+- Remote actions (answer from the dashboard; Claude Code, and Codex for permissions only; opt-in): for Claude Code
+  `PermissionRequest` and `PreToolUse` (`AskUserQuestion`) hooks, for Codex one `PermissionRequest` hook, run `agentwatch decide`, which registers a pending decision with the server
   (`POST /api/decisions`, token), long-polls it (`GET /api/decisions/:id/wait`, token) and prints the documented hook
   JSON. Resolving (`POST /api/decisions/:id/resolve`) needs the dashboard's `Origin` header, not the token: that blocks
   web pages but not local processes, which can send any `Origin` (see hard rule 3). Pending
@@ -263,8 +274,10 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
   unverified); questions whose multi-select labels contain a comma are not offered. Payload
   fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not
-  captures. Grok hooks can only deny, so Grok is unsupported; Codex `PermissionRequest` has the same format and
-  OpenCode has an HTTP permission API (future work). Hooks can't send new prompts or start plans; only Claude Code
+  captures. Grok is unsupported (see Grok above); Codex is supported for permissions only (see Codex above). OpenCode has an
+  HTTP permission API (future work): the adapter already tags a subagent's prompts with its child session id as
+  `agentId` and `openCodeRequestRef()` gives the request to reply to. Tool-specific parsing and output live in each
+  adapter's `decide` capability (`Adapter.decide`, src/adapters/types.ts); src/cli/decide.ts is the generic flow. Hooks can't send new prompts or start plans; only Claude Code
   Channels (a research preview) could, and that is out of scope.
 - Remote mode: the "Set up phone" wizard runs `tailscale serve` itself (`src/server/serve.ts`, tested with an injected fake
   CLI only). Unverified: what the CLI prints when HTTPS isn't enabled for the tailnet (we only match a

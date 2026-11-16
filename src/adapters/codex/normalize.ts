@@ -1,4 +1,10 @@
-import { type AgentEvent, type AgentStatus, titleFromPrompt, truncateMessage } from "../../core/types.js";
+import {
+  type AgentEvent,
+  type AgentStatus,
+  parseAgentId,
+  titleFromPrompt,
+  truncateMessage,
+} from "../../core/types.js";
 import { detectHost } from "../shared/host.js";
 import { toolActivity } from "../shared/tool-name.js";
 import type { NormalizeContext } from "../types.js";
@@ -29,6 +35,12 @@ function statusFor(
         message: tool ? `Needs permission to use ${tool}` : "Needs permission",
       };
     }
+    case "SubagentStart":
+      // Registers the subagent with the store (it shares the parent's session_id); says nothing about the session.
+      return parseAgentId(raw.agent_id) ? { status: "working" } : null;
+    case "SubagentStop":
+      // The subagent finished: the store reads `done` with an agent id as "this agent only".
+      return parseAgentId(raw.agent_id) ? { status: "done" } : null;
     case "Stop":
       return { status: "done" };
     case "Interrupt":
@@ -72,6 +84,10 @@ export function normalizeCodex(raw: unknown, ctx: NormalizeContext): AgentEvent 
   } else if (record.hook_event_name === "PostToolUse" && record.tool_name === "request_user_input_async") {
     event.inputPending = true;
   }
+  // Subagents share the session id; PreToolUse/PostToolUse/PermissionRequest and SubagentStart/Stop carry agent_id
+  // (the main agent's payloads carry none), per the generated hook schemas in openai/codex.
+  const agentId = parseAgentId(record.agent_id);
+  if (agentId) event.agentId = agentId;
   const message = truncateMessage(mapped.message);
   if (message) event.message = message;
   if (mapped.title) event.title = mapped.title;

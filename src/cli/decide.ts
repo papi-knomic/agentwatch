@@ -1,20 +1,12 @@
-import { detectClaudeHost } from "../adapters/claude-code/normalize.js";
-import { toolDefaults } from "../adapters/index.js";
+import { getAdapter, toolDefaults } from "../adapters/index.js";
 import { type Config, readConfig } from "../core/config.js";
 import { HOOK_STDIN_MAX_BYTES } from "../core/constants.js";
-import {
-  DEFAULT_PLAN_FEEDBACK,
-  type DecisionKind,
-  type DecisionQuestion,
-  PLAN_FEEDBACK_MAX,
-  parseQuestions,
-  previewFor,
-  type Resolution,
-} from "../core/decision-types.js";
-import { parseAgentId } from "../core/types.js";
+import type { Resolution } from "../core/decision-types.js";
 
 /**
- * `agentwatch decide --tool claude-code`: the opt-in hook behind answering from the dashboard.
+ * `agentwatch decide --tool <id>`: the opt-in hook behind answering from the dashboard. Which tools have one, and how
+ * each reads its payload and words its answer, is the adapter's `decide` capability (src/adapters/types.ts); this
+ * file is the generic part.
  *
  * Unlike `hook`, this one may print to stdout and may take a while, because that is the whole point: it holds a
  * permission prompt (or AskUserQuestion) open until the dashboard answers. Everything else is still the same
@@ -59,116 +51,6 @@ export interface DecideDeps {
   concurrentDeadlineMs?: number;
 }
 
-/**
- * The VS Code extension and the Claude desktop app show their own Approve/Deny UI. The docs say that for a call that
- * reaches a permission-prompt tool or the Agent SDK's `canUseTool`, "the hooks run alongside your host, and whichever
- * decides first applies" (https://code.claude.com/docs/en/hooks, PermissionRequest). That these two hosts use that
- * path is inferred, not verified. The terminal CLI is not in this list: there the hook blocks Claude Code's prompt.
- */
-export function isConcurrentHost(env: NodeJS.ProcessEnv): boolean {
-  const host = detectClaudeHost(env);
-  return host === "VS Code" || host === "Claude Desktop";
-}
-
-interface Parsed {
-  kind: DecisionKind;
-  sessionId: string;
-  toolName: string;
-  toolInput: Record<string, unknown>;
-  questions?: DecisionQuestion[];
-  /** Set when a subagent is asking (Claude Code includes agent_id/agent_type only inside subagents). */
-  agentId?: string;
-  agentType?: string;
-}
-
-function withAgent(parsed: Parsed, record: Record<string, unknown>): Parsed {
-  const agentId = parseAgentId(record.agent_id);
-  if (!agentId) return parsed;
-  const agentType = record.agent_type;
-  return {
-    ...parsed,
-    agentId,
-    ...(typeof agentType === "string" && agentType !== "" ? { agentType: agentType.slice(0, 64) } : {}),
-  };
-}
-
-function parsePayload(text: string): Parsed | null {
-  const parsed = parseBasics(text);
-  if (!parsed) return null;
-  return withAgent(parsed.value, parsed.record);
-}
-
-function parseBasics(text: string): { value: Parsed; record: Record<string, unknown> } | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text.replace(/^﻿/, ""));
-  } catch {
-    return null;
-  }
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const record = raw as Record<string, unknown>;
-  const sessionId = record.session_id;
-  const toolName = record.tool_name;
-  const toolInput = record.tool_input;
-  if (typeof sessionId !== "string" || sessionId === "" || sessionId.length > 256) return null;
-  if (typeof toolName !== "string" || toolName === "" || toolName.length > 100) return null;
-  if (typeof toolInput !== "object" || toolInput === null || Array.isArray(toolInput)) return null;
-  const input = toolInput as Record<string, unknown>;
-
-  if (record.hook_event_name === "PermissionRequest") {
-    // Questions are answered from PreToolUse; the permission hook would only duplicate them.
-    if (toolName === "AskUserQuestion") return null;
-    // The plan gets its own card (plan text, feedback box) rather than a generic "Allow ExitPlanMode?".
-    return {
-      value: {
-        kind: toolName === "ExitPlanMode" ? "plan" : "permission",
-        sessionId,
-        toolName,
-        toolInput: input,
-      },
-      record,
-    };
-  }
-  if (record.hook_event_name === "PreToolUse" && toolName === "AskUserQuestion") {
-    const questions = parseQuestions(input.questions);
-    return questions
-      ? { value: { kind: "question", sessionId, toolName, toolInput: input, questions }, record }
-      : null;
-  }
-  return null;
-}
-
-/** The JSON Claude Code expects on stdout; shapes are from https://code.claude.com/docs/en/hooks. */
-export function buildOutput(parsed: Parsed, resolution: Resolution): string | null {
-  if (parsed.kind === "permission" || parsed.kind === "plan") {
-    if (!("behavior" in resolution)) return null;
-    const decision =
-      resolution.behavior === "allow"
-        ? // ExitPlanMode and friends need the input echoed back; for the rest it changes nothing.
-          { behavior: "allow", updatedInput: parsed.toolInput }
-        : { behavior: "deny", message: denyMessage(parsed.kind, resolution.message) };
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision } });
-  }
-  if (!("answers" in resolution)) return null;
-  return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "allow",
-      updatedInput: {
-        ...parsed.toolInput,
-        questions: parsed.toolInput.questions,
-        answers: resolution.answers,
-      },
-    },
-  });
-}
-
-function denyMessage(kind: DecisionKind, feedback: string | undefined): string {
-  if (kind !== "plan") return "Denied from the AgentWatch dashboard.";
-  const text = typeof feedback === "string" ? feedback.trim() : "";
-  return text === "" ? DEFAULT_PLAN_FEEDBACK : text.slice(0, PLAN_FEEDBACK_MAX);
-}
-
 function isResolution(value: unknown): value is Resolution {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
@@ -183,21 +65,28 @@ function isResolution(value: unknown): value is Resolution {
 
 export async function runDecide(toolId: string | undefined, deps: DecideDeps): Promise<void> {
   try {
-    if (toolId !== "claude-code") return;
+    const adapter = toolId === undefined ? undefined : getAdapter(toolId);
+    if (!toolId || !adapter?.meta.remoteActions || !adapter.decide) return;
     // Grok also runs hooks from Claude Code's settings.json; it can't take our answer (it can only deny).
     if (deps.env.GROK_HOOK_EVENT || deps.env.GROK_SESSION_ID) return;
 
     const config = await deps.readConfig();
     if (config?.remoteActions !== true || config.tools[toolId]?.enabled === false) return;
 
-    const parsed = parsePayload(await deps.readStdin());
+    const decide = adapter.decide;
+    let payload: unknown;
+    try {
+      payload = JSON.parse((await deps.readStdin()).replace(/^\uFEFF/, ""));
+    } catch {
+      return;
+    }
+    const parsed = decide.parse(payload, deps.env);
     if (!parsed) return;
 
     const base = `http://127.0.0.1:${config.port}`;
     const headers = { "content-type": "application/json", authorization: `Bearer ${config.token}` };
 
-    // Questions come from PreToolUse, which runs before the tool and so blocks the question UI in every host.
-    const concurrent = parsed.kind !== "question" && isConcurrentHost(deps.env);
+    const concurrent = parsed.concurrent === true && parsed.kind !== "question";
     const body = JSON.stringify({
       tool: toolId,
       sessionId: parsed.sessionId,
@@ -205,9 +94,7 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
       toolName: parsed.toolName,
       ...(concurrent ? { concurrent: true } : {}),
       ...(parsed.agentId ? { agentId: parsed.agentId, agentType: parsed.agentType } : {}),
-      ...(parsed.kind !== "question"
-        ? { preview: previewFor(parsed.toolName, parsed.toolInput) }
-        : { questions: parsed.questions }),
+      ...(parsed.kind !== "question" ? { preview: parsed.preview } : { questions: parsed.questions }),
     });
     const register = async (): Promise<{ id?: unknown; reason?: unknown } | null> => {
       const response = await deps.fetch(`${base}/api/decisions`, {
@@ -245,7 +132,7 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
         if (res.status !== 200) return; // expired, cancelled (answered locally) or unknown
         const resolution: unknown = await res.json();
         if (!isResolution(resolution)) return;
-        const output = buildOutput(parsed, resolution);
+        const output = decide.buildOutput(parsed, resolution);
         if (output) await deps.print(output);
         return;
       } catch {

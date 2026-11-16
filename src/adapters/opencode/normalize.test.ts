@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SessionStore } from "../../core/store.js";
 import type { AgentEvent } from "../../core/types.js";
-import { normalizeOpenCode } from "./normalize.js";
+import { normalizeOpenCode, openCodeRequestRef } from "./normalize.js";
 
 interface BusEvent {
   type: string;
@@ -184,6 +184,63 @@ describe("normalizeOpenCode", () => {
     expect(normalizeOpenCode(envelope("session-status-busy.json", root), ctx)).toBeNull();
     expect(normalizeOpenCode(envelope("session-idle.json", root), ctx)).toBeNull();
     expect(normalizeOpenCode(envelope("session-deleted.json", root), ctx)).toBeNull();
+  });
+
+  it("tags a subagent's prompts with the child's session id, and leaves the root's alone", () => {
+    const root = { rootSessionID: "ses_parent" };
+    const asked = normalizeOpenCode(envelope("permission-asked-bash.json", root), ctx);
+    expect(asked?.agentId).toBe("ses_ea930fb5affekKS0B120gDMDYx");
+    expect(normalizeOpenCode(envelope("question-replied.json", root), ctx)?.agentId).toBe(
+      "ses_ea930fb5affekKS0B120gDMDYx",
+    );
+    expect(normalizeOpenCode(envelope("permission-asked-bash.json"), ctx)?.agentId).toBeUndefined();
+    // Request ids are not part of the shared format.
+    expect(JSON.stringify(asked)).not.toContain("per_156cf6b46001QW30zstIuMk7lZ");
+  });
+
+  it("keeps two subagents' waits apart in the store", () => {
+    const store = new SessionStore();
+    const send = (name: string, child: string, iso: string) => {
+      const raw = envelope(name, { rootSessionID: "ses_parent" }) as {
+        event: { properties: { sessionID: string } };
+      };
+      raw.event.properties.sessionID = child;
+      const event = normalizeOpenCode({ ...raw, at: iso }, ctx);
+      if (event) store.apply(event);
+    };
+    store.apply({
+      tool: "opencode",
+      sessionId: "ses_parent",
+      cwd: "C:\\p",
+      status: "working",
+      timestamp: "2026-10-16T11:59:00.000Z",
+    });
+    send("permission-asked-bash.json", "ses_childA", "2026-10-16T12:00:00.000Z");
+    send("permission-asked-bash.json", "ses_childB", "2026-10-16T12:00:05.000Z");
+    expect(store.list()[0]?.status).toBe("needs_input");
+    send("permission-replied-once.json", "ses_childA", "2026-10-16T12:00:10.000Z");
+    expect(store.list()[0]?.status).toBe("needs_input"); // B is still waiting
+    send("permission-replied-once.json", "ses_childB", "2026-10-16T12:00:15.000Z");
+    expect(store.list()[0]?.status).toBe("working");
+  });
+
+  it("names the request a future answer must address, for the child that asked", () => {
+    expect(
+      openCodeRequestRef(envelope("permission-asked-bash.json", { rootSessionID: "ses_parent" })),
+    ).toEqual({
+      kind: "permission",
+      sessionId: "ses_ea930fb5affekKS0B120gDMDYx",
+      requestId: "per_156cf6b46001QW30zstIuMk7lZ",
+    });
+    expect(openCodeRequestRef(envelope("question-asked.json"))).toMatchObject({
+      kind: "question",
+      requestId: "que_156cfb128001syZq1r42zevPk2",
+    });
+    expect(openCodeRequestRef(envelopeV2("form-created.json"))).toMatchObject({
+      kind: "question",
+      requestId: "frm_1bfabdb4a001ao3P8fbhxlq1qP",
+    });
+    expect(openCodeRequestRef(envelope("permission-replied-once.json"))).toBeNull();
   });
 
   it("falls back to the hook's clock and OPENCODE_PID", () => {

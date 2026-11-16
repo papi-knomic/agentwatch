@@ -37,9 +37,9 @@ const run = (over: Partial<Parameters<typeof syncRemoteActionsFlag>[0]>) =>
 
 describe("syncRemoteActionsFlag", () => {
   it("turns the flag on only when a tool with the hooks is targeted", async () => {
-    await run({ remoteActions: true, supported: false, targetNames: "Codex" });
+    await run({ remoteActions: true, supported: false, targetNames: "Grok" });
     expect(await flag()).toBe(false);
-    expect(lines.join("\n")).toMatch(/not available for Codex/);
+    expect(lines.join("\n")).toMatch(/not available for Grok/);
     expect(lines.join("\n")).not.toMatch(/Remote actions: on/);
 
     lines = [];
@@ -59,7 +59,7 @@ describe("syncRemoteActionsFlag", () => {
   it("leaves the flag alone when uninstalling a tool without the hooks, in a dry run, or in a sandbox", async () => {
     await run({ remoteActions: true });
     lines = [];
-    await run({ uninstall: true, supported: false, targetNames: "Codex" });
+    await run({ uninstall: true, supported: false, targetNames: "Grok" });
     expect(await flag()).toBe(true);
     expect(lines).toEqual([]);
 

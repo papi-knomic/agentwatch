@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { addClaudeStyleHooks, removeClaudeStyleHooks } from "../shared/claude-style-hooks.js";
 import { updateJsonFile } from "../shared/json-config.js";
-import { type InstallOptions, type InstallResult, isOurHookCommand } from "../types.js";
+import { type InstallOptions, type InstallResult, isOurDecideCommand, isOurHookCommand } from "../types.js";
 import { codexMeta } from "./meta.js";
 
 /** Each event maps to a status in normalize.ts. Keep the two lists in sync. */
@@ -10,6 +10,8 @@ export const CODEX_HOOK_EVENTS = [
   "UserPromptSubmit",
   "PostToolUse",
   "PermissionRequest",
+  "SubagentStart",
+  "SubagentStop",
   "Stop",
   "Interrupt",
   "SessionEnd",
@@ -23,7 +25,17 @@ export function codexHooksPath(options: Pick<InstallOptions, "homeDir" | "env">)
   return join(codexHome && codexHome.length > 0 ? codexHome : join(options.homeDir, ".codex"), "hooks.json");
 }
 
-const isOurs = (command: unknown) => isOurHookCommand(command, codexMeta.id);
+/**
+ * The opt-in hook that lets the dashboard answer a permission prompt. It is a SEPARATE entry from the async notify
+ * hook on the same event: it must be synchronous (async hooks can't decide), and 600 s is Codex's documented default
+ * timeout (https://learn.chatgpt.com/docs/hooks). Only PermissionRequest: Codex has no hook for questions or plans.
+ */
+export const CODEX_DECIDE_EVENTS = ["PermissionRequest"] as const;
+export const CODEX_DECIDE_TIMEOUT_SECONDS = 600;
+
+const isHookCommand = (command: unknown) => isOurHookCommand(command, codexMeta.id);
+const isDecideCommand = (command: unknown) => isOurDecideCommand(command, codexMeta.id);
+const isOurs = (command: unknown) => isHookCommand(command) || isDecideCommand(command);
 
 export async function installCodex(options: InstallOptions): Promise<InstallResult> {
   const configPath = codexHooksPath(options);
@@ -37,7 +49,25 @@ export async function installCodex(options: InstallOptions): Promise<InstallResu
   });
   const result = await updateJsonFile(
     configPath,
-    (data) => addClaudeStyleHooks(data, CODEX_HOOK_EVENTS, handlerFor, isOurs, configPath, summary),
+    (data) => {
+      addClaudeStyleHooks(data, CODEX_HOOK_EVENTS, handlerFor, isHookCommand, configPath, summary);
+      if (options.remoteActions === true) {
+        if (!options.decideCommand) throw new Error("remoteActions needs a decideCommand.");
+        const command = options.decideCommand;
+        addClaudeStyleHooks(
+          data,
+          CODEX_DECIDE_EVENTS,
+          // No `async`: the hook has to be waited for to be able to answer.
+          () => ({ type: "command", command, timeout: CODEX_DECIDE_TIMEOUT_SECONDS }),
+          isDecideCommand,
+          configPath,
+          summary,
+        );
+      } else if (options.remoteActions === false) {
+        removeClaudeStyleHooks(data, isDecideCommand, configPath, summary);
+      }
+      return data;
+    },
     { dryRun: options.dryRun },
   );
   return {

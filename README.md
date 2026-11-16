@@ -86,10 +86,10 @@ If release notes mention new hooks, run `agentwatch install --tool all` again (a
 
 | Tool | Installs into | Needs input | Done | Error | Notes |
 |---|---|---|---|---|---|
-| Claude Code | `~/.claude/settings.json` | ✅ | ✅ | ✅ | [adapter docs](src/adapters/claude-code/README.md) |
-| Codex | `~/.codex/hooks.json` | ✅ (permissions and async questions) | ✅ | ❌ no such event | Trust the hooks once via `/hooks`. [adapter docs](src/adapters/codex/README.md) |
-| Grok | `~/.grok/hooks/agentwatch.json` (its own file) | ⚠️ only messages asking for a decision | ✅ | ✅ | [adapter docs](src/adapters/grok/README.md) |
-| OpenCode | `~/.config/opencode/plugins/agentwatch.js` (its own plugin) | ✅ (permissions and questions) | ✅ | ✅ | OpenCode 1.x and 2.x, one plugin for both. Restart OpenCode after installing. Works with any model provider. [adapter docs](src/adapters/opencode/README.md) |
+| Claude Code | `~/.claude/settings.json` | ✅ | ✅ | ✅ | Subagents tracked separately. Can answer from the dashboard (opt-in). [adapter docs](src/adapters/claude-code/README.md) |
+| Codex | `~/.codex/hooks.json` | ✅ (permissions and async questions) | ✅ | ❌ no such event | Trust the hooks once via `/hooks`. Subagents tracked separately. Can answer permissions from the dashboard (opt-in). [adapter docs](src/adapters/codex/README.md) |
+| Grok | `~/.grok/hooks/agentwatch.json` (its own file) | ⚠️ only messages asking for a decision | ✅ | ✅ | Subagent events are ignored so they can't finish the parent session. Cannot answer from the dashboard (hooks can't approve a prompt). [adapter docs](src/adapters/grok/README.md) |
+| OpenCode | `~/.config/opencode/plugins/agentwatch.js` (its own plugin) | ✅ (permissions and questions) | ✅ | ✅ | OpenCode 1.x and 2.x, one plugin for both. Restart OpenCode after installing. Works with any model provider. Two subagents asking at once are tracked separately. [adapter docs](src/adapters/opencode/README.md) |
 
 Hooks are set per user, not per app, so sessions are picked up from the CLI in any terminal and from the VS Code
 extensions too.
@@ -125,11 +125,14 @@ On Windows, after `install`, notifications show under the app's own name and ico
 PowerShell. If none appear, check *Settings → System → Notifications*: allow notifications for AgentWatch (or Windows
 PowerShell before install) and turn off Do Not Disturb.
 
-### Answer prompts from the dashboard (Claude Code, opt-in)
+### Answer prompts from the dashboard (Claude Code and Codex, opt-in)
 
-Off by default. When on, a Claude Code permission request (for example "allow this Bash command?") or a question from
-Claude shows up on its session card with **Approve** / **Deny** buttons or the question's options, so you can answer
-without switching windows.
+Off by default. When on, a Claude Code or Codex permission request (for example "allow this Bash command?") or a
+question from Claude Code shows up on its session card with **Approve** / **Deny** buttons or the question's options,
+so you can answer without switching windows. Codex has no hook for questions or plans, so for Codex only permission
+requests can be answered. Turning it on adds, per connected tool, a hook that waits for your answer: for Codex one
+extra synchronous `PermissionRequest` entry (timeout 600 s) next to the existing async one, which you have to approve
+once via `/hooks` in Codex like the others. Re-run `agentwatch install --remote-actions` to add it to Codex.
 
 Turn it on from the dashboard (**Settings** > **Answering** > **Turn on**, which shows exactly what it will
 add first) or from a terminal:
@@ -197,8 +200,9 @@ running as you can run commands anyway, but on a shared multi-user machine other
 this on on a shared machine**. A dashboard login is planned together with phone access. The dashboard's state and
 live stream also refuse requests from other web pages. The command or file path shown on
 the card (up to 300 characters; plans up to 2000) is kept in memory only while the prompt is open and is never written
-to disk. Grok hooks can only deny, so Grok isn't supported; Codex uses the same hook format and OpenCode has an HTTP
-API for permissions, both possible later.
+to disk. Grok isn't supported: its hooks have no permission-prompt event, and a `PreToolUse` "allow" only means
+"not blocked", it never approves a pending prompt. OpenCode has an HTTP API for permissions and questions, possible
+later.
 
 ### Phone notifications (ntfy, opt-in)
 
@@ -359,7 +363,7 @@ the session switches to "working · Running approved command", usually within a 
 ## Limitations
 
 - Phone access runs Tailscale Serve for you on a click, but has only been tested against a simulated proxy and a fake CLI (see above).
-- Answering prompts from the dashboard is Claude Code only and opt-in. Whether Claude Code's own dialog stays visible
+- Answering prompts from the dashboard is Claude Code (permissions, questions, plans) and Codex (permissions only), and opt-in. Whether Claude Code's own dialog stays visible
   while the hook waits in the terminal is unverified; VS Code and Claude desktop prompts are treated as concurrent (inferred, see above).
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach your local dashboard.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks.

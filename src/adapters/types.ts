@@ -1,4 +1,5 @@
 import type { Sound } from "../core/config.js";
+import type { DecisionKind, DecisionQuestion, Resolution } from "../core/decision-types.js";
 import type { AgentEvent, Session } from "../core/types.js";
 
 export interface AdapterMeta {
@@ -45,6 +46,37 @@ export interface InstallResult {
   notes?: string[];
 }
 
+/** What a tool's `decide` hook asks the dashboard, parsed from the hook payload (see `AdapterDecide`). */
+export interface DecideRequest {
+  kind: DecisionKind;
+  sessionId: string;
+  toolName: string;
+  /** Raw tool input, kept only so `buildOutput` can echo it back where the tool needs that. Never sent on. */
+  toolInput: Record<string, unknown>;
+  /** Short display text (command, path, plan); set for permission and plan kinds. */
+  preview?: string;
+  questions?: DecisionQuestion[];
+  /** Set when a subagent is asking (validated with `parseAgentId`). */
+  agentId?: string;
+  agentType?: string;
+  /**
+   * The host shows the same prompt itself and the hook runs alongside it, so it may wait the long concurrent
+   * deadline and never needs a viewer. false/absent: the hook blocks the tool's own prompt (the "blocking" class).
+   */
+  concurrent?: boolean;
+}
+
+/**
+ * Tool-specific half of `agentwatch decide`. The generic flow (config checks, register, long-poll, deadlines) lives in
+ * src/cli/decide.ts and never looks inside a payload; everything about one tool's hook format lives here.
+ */
+export interface AdapterDecide {
+  /** The payload from stdin (already JSON-parsed, untrusted), or null when this event is not one we answer. */
+  parse(payload: unknown, env: NodeJS.ProcessEnv): DecideRequest | null;
+  /** The single stdout line the tool expects for this resolution, or null to stay silent. */
+  buildOutput(request: DecideRequest, resolution: Resolution): string | null;
+}
+
 export interface Adapter {
   meta: AdapterMeta;
   /** Converts one raw hook payload into the shared format, or null if the event is irrelevant. */
@@ -56,6 +88,8 @@ export interface Adapter {
    * window has been brought to the front; standalone app links open directly.
    */
   sessionLink?(session: Session): string | undefined;
+  /** Present on tools with `meta.remoteActions`: how their `decide` hook reads prompts and answers them. */
+  decide?: AdapterDecide;
 }
 
 /** Identifies hook entries this project added, independent of where the CLI lives on disk. */

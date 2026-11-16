@@ -33,6 +33,27 @@ describe("normalizeCodex", () => {
     expect(JSON.stringify(event)).not.toContain("rm -rf");
   });
 
+  it("attributes subagent events to their agent_id (permission, start, stop); the main agent has none", () => {
+    expect(normalizeCodex(fixture("permission-request.json"), ctx)?.agentId).toBeUndefined();
+    expect(normalizeCodex(fixture("permission-request-subagent.json"), ctx)).toMatchObject({
+      status: "needs_input",
+      agentId: "agent-7f3a",
+    });
+    expect(normalizeCodex(fixture("subagent-start.json"), ctx)).toMatchObject({
+      status: "working",
+      agentId: "agent-7f3a",
+    });
+    const stop = normalizeCodex(fixture("subagent-stop.json"), ctx);
+    expect(stop).toMatchObject({ status: "done", agentId: "agent-7f3a" });
+    expect(JSON.stringify(stop)).not.toContain("Done.");
+  });
+
+  it("drops SubagentStart/Stop without a usable agent_id, so they can't end the parent's turn", () => {
+    const stop = fixture("subagent-stop.json") as Record<string, unknown>;
+    expect(normalizeCodex({ ...stop, agent_id: undefined }, ctx)).toBeNull();
+    expect(normalizeCodex({ ...stop, agent_id: "bad id!" }, ctx)).toBeNull();
+  });
+
   it("marks an async question as pending, without carrying its questions or answers", () => {
     expect(normalizeCodex(fixture("question-async.json"), ctx)).toMatchObject({
       status: "needs_input",

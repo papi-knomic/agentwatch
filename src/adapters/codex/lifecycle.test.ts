@@ -51,6 +51,28 @@ describe("Codex desktop lifecycle", () => {
     expect(notifications.map((n) => n.status)).toEqual(["needs_input", "done"]);
   });
 
+  it("keeps two subagents' permission prompts apart, and a subagent stop never finishes the session", () => {
+    const { store, notifications, apply } = harness();
+    apply("UserPromptSubmit", { prompt: "Fan out" });
+    apply("SubagentStart", { agent_id: "a1" });
+    apply("SubagentStart", { agent_id: "a2" });
+    apply("PermissionRequest", { tool_name: "shell", agent_id: "a1" });
+    apply("PermissionRequest", { tool_name: "shell", agent_id: "a2" });
+    expect(store.list()[0]?.status).toBe("needs_input");
+    // a1 is answered and carries on: a2 is still waiting.
+    apply("PostToolUse", { tool_name: "shell", agent_id: "a1" });
+    expect(store.list()[0]?.status).toBe("needs_input");
+    apply("SubagentStop", { agent_id: "a1" });
+    expect(store.list()[0]?.status).toBe("needs_input");
+    apply("PostToolUse", { tool_name: "shell", agent_id: "a2" });
+    expect(store.list()[0]?.status).toBe("working");
+    apply("SubagentStop", { agent_id: "a2" });
+    expect(store.list()[0]?.status).toBe("working");
+    apply("Stop");
+    expect(store.list()[0]?.status).toBe("done");
+    expect(notifications.map((n) => n.status)).toEqual(["needs_input", "done"]);
+  });
+
   it("never notifies for a suggestion helper, including after its session ends", () => {
     const { store, notifications, apply } = harness();
     apply("SessionStart");

@@ -80,7 +80,7 @@ describe("runDecide falls through silently", () => {
 
   it("for other tools, Grok's calls, and payloads it does not handle", async () => {
     const cases: [string | undefined, string, NodeJS.ProcessEnv][] = [
-      ["codex", permission, {}],
+      ["grok", permission, {}],
       [undefined, permission, {}],
       ["claude-code", permission, { GROK_SESSION_ID: "g1" }],
       ["claude-code", permission, { GROK_HOOK_EVENT: "x" }],

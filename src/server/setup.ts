@@ -93,10 +93,26 @@ export function createSetupService(deps: SetupDeps): SetupService {
     hookCommand: deps.hookCommandFor(adapter.meta.id),
     ...(deps.decideCommandFor ? { decideCommand: deps.decideCommandFor(adapter.meta.id) } : {}),
   });
-  const remoteTools = () => deps.adapters.filter((a) => a.meta.remoteActions && deps.decideCommandFor);
+  /**
+   * Tools that get the decide hooks. Only ones already connected, so switching the feature on never writes a tool's
+   * config (e.g. ~/.codex/hooks.json) for someone who doesn't use it. With nothing connected yet, all of them.
+   */
+  const remoteTools = async () => {
+    const capable = deps.adapters.filter((a) => a.meta.remoteActions && deps.decideCommandFor);
+    const connected = await Promise.all(
+      capable.map((a) =>
+        a
+          .install(optionsFor(a, true))
+          .then((r) => !r.changed)
+          .catch(() => false),
+      ),
+    );
+    const used = capable.filter((_, i) => connected[i]);
+    return used.length > 0 ? used : capable;
+  };
 
   async function remoteActionsState(): Promise<RemoteActionsState> {
-    const tools = remoteTools();
+    const tools = await remoteTools();
     // Installed = adding the hooks would change nothing.
     const previews = await Promise.all(
       tools.map((a) =>
@@ -169,7 +185,7 @@ export function createSetupService(deps: SetupDeps): SetupService {
   }
 
   async function setRemoteActions(enabled: boolean, dryRun: boolean) {
-    const targets = remoteTools();
+    const targets = await remoteTools();
     if (targets.length === 0 || !deps.saveRemoteActions)
       throw new UnknownToolError("Remote actions aren't available");
     const results: ConnectResult[] = [];

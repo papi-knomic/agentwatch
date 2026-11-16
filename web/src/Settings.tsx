@@ -199,11 +199,12 @@ function AnsweringTab({ setup, onSetup }: { setup: Setup | null; onSetup: (setup
       <h2>Answer prompts from the dashboard</h2>
       <p className="settings-text">
         Approve or deny permission requests and answer questions on this page instead of in the terminal. It
-        works for Claude Code only, and is off by default.
+        works for Claude Code (permissions, questions and plans) and Codex (permissions only), and is off by
+        default.
       </p>
       <ul className="settings-list">
         <li>
-          While a dashboard tab is visible, Claude Code waits up to about 100 seconds for your answer here.
+          While a dashboard tab is visible, the agent waits up to about 100 seconds for your answer here.
         </li>
         <li>
           If the tab is hidden or covered, what happens is your choice below (browser alerts, if enabled,

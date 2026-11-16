@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SessionStore } from "../../core/store.js";
 import { normalizeGrok } from "./normalize.js";
 
 const fixture = (name: string): unknown =>
@@ -81,6 +82,54 @@ describe("normalizeGrok", () => {
     );
     expect(normalizeGrok({ ...base, message: "Indexing finished" }, ctx)).toBeNull();
     expect(normalizeGrok(base, ctx)).toBeNull();
+  });
+
+  // `subagentType` comes from Grok's embedded docs, not from a capture: these payloads are constructed.
+  describe("subagent payloads (unverified field)", () => {
+    const sub = { sessionId: "grok-sess-1", cwd: "/w", subagentType: "explore" };
+
+    it("never move the parent's status", () => {
+      for (const name of [
+        "stop",
+        "post_tool_use",
+        "post_tool_use_failure",
+        "user_prompt_submit",
+        "stop_failure",
+      ]) {
+        expect(normalizeGrok({ ...sub, hookEventName: name }, ctx)).toBeNull();
+      }
+      expect(normalizeGrok({ ...sub, hook_event_name: "Stop", subagent_type: "explore" }, ctx)).toBeNull();
+    });
+
+    it("still surface a subagent's permission prompt, as an unattributed wait that any activity clears", () => {
+      const event = normalizeGrok(
+        { ...sub, hookEventName: "notification", notificationType: "permission_prompt" },
+        ctx,
+      );
+      expect(event).toMatchObject({ status: "needs_input", agentId: "unattributed" });
+      const store = new SessionStore();
+      const at = (iso: string) => ({ ...ctx, now: new Date(iso) });
+      const apply = (raw: Record<string, unknown>, iso: string) => {
+        const e = normalizeGrok(raw, at(iso));
+        if (e) store.apply(e);
+      };
+      const main = { sessionId: "grok-sess-1", cwd: "/w" };
+      apply({ ...main, hookEventName: "user_prompt_submit", prompt: "go" }, "2026-10-16T12:00:00.000Z");
+      apply(
+        { ...sub, hookEventName: "notification", notificationType: "permission_prompt" },
+        "2026-10-16T12:00:10.000Z",
+      );
+      apply({ ...sub, hookEventName: "stop" }, "2026-10-16T12:00:20.000Z");
+      expect(store.list()[0]?.status).toBe("needs_input");
+      apply({ ...main, hookEventName: "post_tool_use", toolName: "Bash" }, "2026-10-16T12:00:30.000Z");
+      expect(store.list()[0]?.status).toBe("working");
+    });
+
+    it("leave main-agent events (no subagentType) as they were", () => {
+      expect(normalizeGrok({ ...sub, subagentType: undefined, hookEventName: "stop" }, ctx)).toMatchObject({
+        status: "done",
+      });
+    });
   });
 
   it("ignores the extra Stop Grok sends after the session shuts down", () => {

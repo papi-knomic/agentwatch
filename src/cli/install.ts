@@ -109,7 +109,7 @@ export async function installCommand(options: {
 
 /**
  * The `decide` hooks do nothing unless the config flag is on too, so both flip together. Only claims a change when
- * a tool that has the hooks (Claude Code) is among the targets, and an uninstall of it turns the flag off again
+ * a tool that has the hooks (Claude Code, Codex) is among the targets, and an uninstall of it turns the flag off again
  * (it is ours, and leaving it on with no hooks would be misleading). Not in a `--home` sandbox.
  */
 export async function syncRemoteActionsFlag(options: {
@@ -125,7 +125,9 @@ export async function syncRemoteActionsFlag(options: {
   const { remoteActions, uninstall, dryRun, log } = options;
   if (!options.supported) {
     if (remoteActions !== undefined && !uninstall) {
-      log(`Remote actions: not available for ${options.targetNames} (Claude Code only), nothing changed.`);
+      log(
+        `Remote actions: not available for ${options.targetNames} (Claude Code and Codex only), nothing changed.`,
+      );
     }
     return;
   }

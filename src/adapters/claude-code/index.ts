@@ -1,4 +1,5 @@
 import type { Adapter } from "../types.js";
+import { claudeCodeDecide } from "./decide.js";
 import { installClaudeCode, uninstallClaudeCode } from "./install.js";
 import { claudeCodeSessionLink } from "./link.js";
 import { claudeCodeMeta } from "./meta.js";
@@ -10,4 +11,5 @@ export const claudeCodeAdapter: Adapter = {
   install: installClaudeCode,
   uninstall: uninstallClaudeCode,
   sessionLink: claudeCodeSessionLink,
+  decide: claudeCodeDecide,
 };

@@ -111,7 +111,11 @@ The envelope: `{ v, event, directory, pid, at, title?, rootSessionID?, afterErro
   often create sessions without a title. `taskTitles: false` drops both in the hook. Only plugins installed after
   this change send `prompt`: re-run `agentwatch install --tool opencode` and restart OpenCode.
 - **Subagents** run in child sessions (`parentID`). Their own lifecycle is ignored, because the parent is busy
-  throughout. Their permission prompts and questions are shown on the top-level session (`rootSessionID`).
+  throughout. Their permission prompts and questions are shown on the top-level session (`rootSessionID`), tagged with the
+  child's own session id as the event's `agentId`, so two subagents asking at once are tracked (and cleared) apart.
+  The request id (`per_…`/`que_…`/`frm_…`) is not part of the shared event and is never stored; `openCodeRequestRef()`
+  in `normalize.ts` extracts `{ kind, sessionId (the child), requestId }` from the same envelope for a future
+  "answer from the dashboard" feature, which would address the reply to the child session, not the root.
 - **Host:** from the environment of the process running the plugin, e.g. `WT_SESSION` → "Windows Terminal".
 - **pid:** the process running the plugin. OpenCode sends no event when you quit, so the server drops its sessions
   once that process is gone (within a minute).
