@@ -458,6 +458,11 @@ npm link            # optional: makes `agentwatch` run your checkout
 Set `AGENTWATCH_HOME` to a temporary folder while developing, so your real config and sessions aren't touched.
 Use `install --home <temp dir>` to test installers against a fake home directory.
 
+## Releases
+
+Release notes live in [CHANGELOG.md](CHANGELOG.md); each version tag gets a GitHub Release with the same text.
+Contributors add a bullet under `## [Unreleased]` for every user-visible change (see [AGENTS.md](AGENTS.md#workflow)).
+
 ## Adding a tool
 
 Each tool is one folder in `src/adapters/`. See [AGENTS.md](AGENTS.md#adding-support-for-a-new-ai-tool) for the

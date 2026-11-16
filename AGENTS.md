@@ -178,6 +178,11 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 ## Workflow
 
 - Keep changes small and focused. Use Conventional Commit messages (`feat:`, `fix:`, `docs:`, …).
+- Every user-visible change adds a bullet (plain language, for users of the npm package) under `## [Unreleased]` in
+  `CHANGELOG.md`, in Added / Changed / Fixed / Security. To release: move those bullets into a new dated
+  `## [x.y.z] - YYYY-MM-DD` section (and update the link references at the bottom), commit, run
+  `npm version <patch|minor|major>`, then `git push && git push origin vX.Y.Z`. The release workflow
+  (`.github/workflows/release.yml`) publishes the GitHub Release from that section; it does not publish to npm.
 - Run tests and lint before saying work is done. If something couldn't be run, say so.
 - Never commit tokens, personal paths, usernames or real captured payloads that contain private data
   (remove them from fixtures first).
