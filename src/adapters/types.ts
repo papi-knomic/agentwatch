@@ -71,6 +71,15 @@ export interface DecideRequest {
   holdPolicy?: { visibleOnly?: boolean; maxHoldMs?: number };
 }
 
+/** A `decide` call that was deliberately left alone; recorded by the server for `agentwatch debug decisions`. */
+export interface SkippedDecide {
+  /** Short fixed identifier, e.g. "cli-permission-request-question". */
+  reason: string;
+  sessionId: string;
+  toolName: string;
+  concurrent: boolean;
+}
+
 /**
  * Tool-specific half of `agentwatch decide`. The generic flow (config checks, register, long-poll, deadlines) lives in
  * src/cli/decide.ts and never looks inside a payload; everything about one tool's hook format lives here.
@@ -78,6 +87,11 @@ export interface DecideRequest {
 export interface AdapterDecide {
   /** The payload from stdin (already JSON-parsed, untrusted), or null when this event is not one we answer. */
   parse(payload: unknown, env: NodeJS.ProcessEnv): DecideRequest | null;
+  /**
+   * For payloads `parse` returned null for on purpose (e.g. another hook answers that prompt): what to record in the
+   * debug log. Never carries prompt or question text.
+   */
+  skipped?(payload: unknown, env: NodeJS.ProcessEnv): SkippedDecide | null;
   /** The single stdout line the tool expects for this resolution, or null to stay silent. */
   buildOutput(request: DecideRequest, resolution: Resolution): string | null;
 }

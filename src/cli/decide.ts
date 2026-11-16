@@ -28,6 +28,7 @@ export const DECIDE_WAIT_DEADLINE_MS = 110_000;
  */
 export const DECIDE_CONCURRENT_DEADLINE_MS = 560_000;
 const REGISTER_TIMEOUT_MS = 400;
+const SKIP_LOG_TIMEOUT_MS = 300;
 const POLL_CHUNK_MS = 25_000;
 /** Longer than a chunk, so the server's own timeout (204) is what ends a normal poll. */
 const POLL_SLACK_MS = 5_000;
@@ -81,12 +82,27 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
       return;
     }
     const parsed = decide.parse(payload, deps.env);
-    if (!parsed) return;
-
     const base = `http://127.0.0.1:${config.port}`;
     const headers = { "content-type": "application/json", authorization: `Bearer ${config.token}` };
+    if (!parsed) {
+      // Record why a prompt got no card, so `debug decisions` can explain it. Awaited (the process exits right after,
+      // which would cut a fire-and-forget request) but capped: a refused connection returns at once, a hung server
+      // costs at most SKIP_LOG_TIMEOUT_MS. Never carries prompt text.
+      const skipped = decide.skipped?.(payload, deps.env);
+      if (skipped) {
+        await deps
+          .fetch(`${base}/api/decisions/skipped`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ tool: toolId, ...skipped }),
+            signal: AbortSignal.timeout(SKIP_LOG_TIMEOUT_MS),
+          })
+          .catch(() => undefined);
+      }
+      return;
+    }
 
-    // The adapter decides: Claude Code never marks a question concurrent (its hook blocks the question UI), OpenCode does.
+    // The adapter decides: Claude Code marks a question concurrent only in VS Code / Desktop (via PermissionRequest), as OpenCode does.
     const concurrent = parsed.concurrent === true;
     const body = JSON.stringify({
       tool: toolId,

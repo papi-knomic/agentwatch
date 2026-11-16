@@ -87,8 +87,6 @@ describe("runDecide falls through silently", () => {
       ["claude-code", "{ not json", {}],
       ["claude-code", "", {}],
       ["claude-code", JSON.stringify({ hook_event_name: "Stop", session_id: "s" }), {}],
-      // Questions are answered from PreToolUse only.
-      ["claude-code", JSON.stringify({ ...JSON.parse(permission), tool_name: "AskUserQuestion" }), {}],
       // A PreToolUse for any other tool is none of our business.
       ["claude-code", JSON.stringify({ ...JSON.parse(question), tool_name: "Bash" }), {}],
       ["claude-code", JSON.stringify({ ...JSON.parse(question), tool_input: { questions: [] } }), {}],
@@ -100,6 +98,28 @@ describe("runDecide falls through silently", () => {
       expect(h.printed).toEqual([]);
       expect(h.fetches).toEqual([]);
     }
+  });
+
+  it("for a question the terminal answers from PreToolUse, but logs the skip", async () => {
+    const stdin = JSON.stringify({ ...JSON.parse(permission), tool_name: "AskUserQuestion" });
+    const calls: { url: string; body: string }[] = [];
+    const h = harness(stdin, baseConfig(1), {
+      fetch: async (input, init) => {
+        calls.push({ url: String(input), body: String(init?.body) });
+        return json(200, { ok: true });
+      },
+    });
+    await runDecide("claude-code", h.deps);
+    expect(h.printed).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("http://127.0.0.1:1/api/decisions/skipped");
+    expect(JSON.parse(calls[0]?.body ?? "")).toEqual({
+      tool: "claude-code",
+      reason: "cli-permission-request-question",
+      sessionId: JSON.parse(permission).session_id,
+      toolName: "AskUserQuestion",
+      concurrent: false,
+    });
   });
 
   it("for a multi-select question whose labels contain a comma (the answer string would be ambiguous)", async () => {
@@ -553,6 +573,84 @@ describe("runDecide with subagents and a session the server does not know yet", 
   });
 });
 
+describe("runDecide: VS Code question through a real server", () => {
+  it("registers from PermissionRequest, prints the answers as PermissionRequest JSON, logs the skip", async () => {
+    const store = new SessionStore();
+    const config = baseConfig(0);
+    const server = createAppServer({
+      config,
+      store,
+      decisions: new DecisionStore(),
+      tools: [],
+      staticDir: "does-not-exist",
+      version: "0.0.0-test",
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    config.port = port;
+    store.apply({
+      tool: "claude-code",
+      sessionId: "sess-demo-1",
+      cwd: "C:\\p",
+      status: "working",
+      timestamp: new Date().toISOString(),
+    });
+    const env = { CLAUDE_CODE_ENTRYPOINT: "claude-vscode" };
+    const origin = `http://127.0.0.1:${port}`;
+    try {
+      const skip = harness(await fixture("pre-tool-use-ask-user-question.json"), config, { fetch, env });
+      await runDecide("claude-code", skip.deps);
+      expect(skip.printed).toEqual([]);
+
+      const stdin = await fixture("permission-request-ask-user-question.json");
+      const original = JSON.parse(stdin).tool_input.questions;
+      const h = harness(stdin, config, { fetch, env, deadlineMs: 5_000, concurrentDeadlineMs: 5_000 });
+      const run = runDecide("claude-code", h.deps);
+      let state: { decisions: { id: string; concurrent?: boolean }[] } = { decisions: [] };
+      for (let i = 0; i < 100 && state.decisions.length === 0; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        state = (await (await fetch(`${origin}/api/state`)).json()) as typeof state;
+      }
+      expect(state.decisions[0]?.concurrent).toBe(true);
+      const answers = {
+        "Which database should the app use?": "PostgreSQL",
+        "Which extras do you want?": ["CI", "Linting"],
+      };
+      const resolved = await fetch(`${origin}/api/decisions/${state.decisions[0]?.id}/resolve`, {
+        method: "POST",
+        headers: { origin, "content-type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      expect(resolved.status).toBe(200);
+      await run;
+      expect(JSON.parse(h.printed[0] as string)).toEqual({
+        hookSpecificOutput: {
+          hookEventName: "PermissionRequest",
+          decision: {
+            behavior: "allow",
+            updatedInput: {
+              questions: original,
+              answers: {
+                "Which database should the app use?": "PostgreSQL",
+                "Which extras do you want?": "Linting, CI",
+              },
+            },
+          },
+        },
+      });
+      const debug = await fetch(`${origin}/api/debug/decisions`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      const text = await debug.text();
+      expect(text).toContain("question-handled-by-permission-request");
+      expect(text).not.toContain("Which database");
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 describe("runDecide in hosts that show their own prompt (concurrent)", () => {
   let permission: string;
   let question: string;
@@ -600,7 +698,7 @@ describe("runDecide in hosts that show their own prompt (concurrent)", () => {
     expect(plan.sent[0]).toMatchObject({ kind: "plan", concurrent: true });
   });
 
-  it("keeps the old rules for the terminal CLI and for AskUserQuestion, even from VS Code", async () => {
+  it("keeps the old rules for the terminal CLI", async () => {
     const cli = probe(permission, { CLAUDE_CODE_ENTRYPOINT: "cli" });
     await runDecide("claude-code", cli.h.deps);
     expect(cli.sent[0]).not.toHaveProperty("concurrent");
@@ -610,10 +708,33 @@ describe("runDecide in hosts that show their own prompt (concurrent)", () => {
     await runDecide("claude-code", unknownHost.h.deps);
     expect(unknownHost.sent[0]).not.toHaveProperty("concurrent");
 
-    const asked = probe(question, { CLAUDE_CODE_ENTRYPOINT: "claude-vscode" });
+    const terminalQuestion = probe(question, { CLAUDE_CODE_ENTRYPOINT: "cli" });
+    await runDecide("claude-code", terminalQuestion.h.deps);
+    expect(terminalQuestion.sent[0]).toMatchObject({ kind: "question" });
+    expect(terminalQuestion.sent[0]).not.toHaveProperty("concurrent");
+    expect(terminalQuestion.polled()).toBe(60_000);
+  });
+
+  it("VS Code PreToolUse question: only a skip record, no wait; PermissionRequest registers a concurrent question", async () => {
+    const urls: string[] = [];
+    const quick = harness(question, baseConfig(1), {
+      env: { CLAUDE_CODE_ENTRYPOINT: "claude-vscode" },
+      fetch: async (input) => {
+        urls.push(String(input));
+        return json(200, { ok: true });
+      },
+    });
+    const started = Date.now();
+    await runDecide("claude-code", quick.deps);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(urls).toEqual(["http://127.0.0.1:1/api/decisions/skipped"]);
+    expect(quick.printed).toEqual([]);
+
+    const asked = probe(await fixture("permission-request-ask-user-question.json"), {
+      CLAUDE_CODE_ENTRYPOINT: "claude-vscode",
+    });
     await runDecide("claude-code", asked.h.deps);
-    expect(asked.sent[0]).toMatchObject({ kind: "question" });
-    expect(asked.sent[0]).not.toHaveProperty("concurrent");
-    expect(asked.polled()).toBe(60_000);
+    expect(asked.sent[0]).toMatchObject({ kind: "question", toolName: "AskUserQuestion", concurrent: true });
+    expect(asked.polled()).toBe(120_000);
   });
 });

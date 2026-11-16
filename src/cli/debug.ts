@@ -15,7 +15,7 @@ export function formatDecisionLog(records: readonly DebugRecord[]): string {
     r.toolName,
     r.agentId ? "sub" : "main",
     r.hostClass,
-    r.outcome,
+    r.reason ? `${r.outcome}: ${r.reason}` : r.outcome,
     r.end ?? (r.outcome === "registered" ? "pending" : "-"),
   ]);
   const head = ["time", "tool", "session", "kind", "toolName", "agent", "host", "outcome", "end"];

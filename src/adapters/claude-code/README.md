@@ -45,8 +45,8 @@ two more hooks. They run `agentwatch decide --tool claude-code`, are not async, 
 
 | Event | Matcher | Used for |
 |---|---|---|
-| `PermissionRequest` | `*` | Approve or deny a permission prompt. `AskUserQuestion` is skipped here. |
-| `PreToolUse` | `AskUserQuestion` | Answer Claude's multiple-choice questions. |
+| `PermissionRequest` | `*` | Approve or deny a permission prompt. `AskUserQuestion` is answered here only in VS Code / Claude Desktop (concurrent), and skipped in the terminal. |
+| `PreToolUse` | `AskUserQuestion` | Answer Claude's multiple-choice questions in the terminal. In VS Code / Claude Desktop it returns at once (no card, no wait) so the host's own question UI shows immediately. |
 
 Our entries are identified by `decide --tool claude-code`; `uninstall` removes them with the others, and
 `--no-remote-actions` removes only them. They do nothing unless `remoteActions` is `true` in the config.
@@ -65,6 +65,7 @@ Output (stdout, exit 0), from the [hooks docs](https://code.claude.com/docs/en/h
 - Question: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"questions":<original>,"answers":{"<question text>":"<option label>"}}}}`.
   Multi-select labels are joined with ", " (docs: "joined with commas"). A label that itself contains a comma would be
   ambiguous, so such multi-select questions are not offered (no remote answer; Claude asks as usual).
+- Question in VS Code / Claude Desktop (via `PermissionRequest`; the docs require `updatedInput` on allow for AskUserQuestion): `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":<original>,"answers":{...}}}}}`, same `answers` shape. **Unverified until confirmed live**; fixture `permission-request-ask-user-question.json` is derived from the documented schema, not captured. The terminal is unchanged.
 - Anything else (no dashboard open, server down, setting off, timeout, answered in the terminal): no output, exit 0,
   so Claude Code carries on normally.
 
@@ -103,11 +104,11 @@ trigger is the same `CLAUDE_CODE_ENTRYPOINT` detection as `host` (`claude-vscode
 the server registers the decision even with no dashboard open, holds it up to 540 s (`CONCURRENT_TTL_MS`) regardless of tab
 visibility (no short hold, no no-viewer cancel), and `decide` waits up to 560 s. It still ends on the cancel rules above and
 when `decide`'s wait connection drops (the host may kill the hook when you answer in its own UI; an orphan timer then clears
-the card within about 3 s). `PreToolUse` `AskUserQuestion` is never concurrent: it blocks the question UI in every host.
+the card within about 3 s). In those hosts an `AskUserQuestion` is a concurrent `question` decision from `PermissionRequest` (the host routes it through its permission UI; inferred, not verified), with the same hold, cancel and orphan rules; `PreToolUse` `AskUserQuestion` returns nothing there. In the terminal, `PreToolUse` `AskUserQuestion` stays blocking and `PermissionRequest` for it is skipped.
 
 **Diagnostics.** The server keeps the last 50 decision attempts in memory (`GET /api/debug/decisions`, this computer only;
 `agentwatch debug decisions`): time, tool, hashed session, kind, tool name, subagent yes/no, concurrent or blocking,
-outcome (`registered`, `no_viewer`, `unknown_session`, `cap`, `invalid`) and end reason. No previews, commands, questions or plans.
+outcome (`registered`, `no_viewer`, `unknown_session`, `cap`, `invalid`, `skipped` with a fixed reason such as `question-handled-by-permission-request` or `cli-permission-request-question`) and end reason. Skips are reported by `decide` with one awaited POST capped at 300 ms (a refused connection returns at once), only when remote actions are on. No previews, commands, questions or plans.
 
 ## Where the session runs (`host`)
 
@@ -181,7 +182,7 @@ guess is probed) and Linux; whether `cliSessionId` changes on resume.
 ## Fixtures
 
 The files in `fixtures/` were written from the JSON examples in the official docs, with paths changed to Windows
-style. `permission-request.json` and `pre-tool-use-ask-user-question.json` are likewise built from the documented
+style. `permission-request.json`, `permission-request-ask-user-question.json` and `pre-tool-use-ask-user-question.json` are likewise built from the documented
 input fields, **not captured** from a real session. `session-start.json` and `session-end.json` contain only the documented common fields plus `source` /
 `reason`, because the docs page didn't show full examples for them. Replace these with real captured payloads when
 you can (remove anything private first).

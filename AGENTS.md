@@ -240,8 +240,12 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   web pages but not local processes, which can send any `Origin` (see hard rule 3). Pending
   decisions go to the dashboard as SSE `decision` / `decision-remove` events (and `decisions` in `snapshot` and
   `/api/state`; a short hold becoming a full one is re-sent as `decision`); they are not part of `Session` and never
-  persisted. A decision records the requesting agent (`agentId`, `agentType` for display, from the hook payload). It is
-  never cancelled by session events if blocking (terminal CLI, every AskUserQuestion): while `decide`'s wait is attached
+  persisted. In VS Code / Claude Desktop an AskUserQuestion is a concurrent question decision from `PermissionRequest`
+  (the host shows its own question UI beside it; `PreToolUse` returns at once there; inferred from the docs, unverified until
+  confirmed live, fixture is documentation-derived); the terminal keeps the blocking `PreToolUse` path and skips
+  `PermissionRequest` for questions. `decide` reports such skips to the debug log (`outcome: skipped` + reason, no question
+  text) with one awaited POST capped at 300ms. A decision records the requesting agent (`agentId`, `agentType` for display, from the hook payload). It is
+  never cancelled by session events if blocking (terminal CLI, terminal AskUserQuestion): while `decide`'s wait is attached
   Claude Code shows no prompt of its own, so nothing else can have answered, and an event (another agent, main agent,
   Notification, approval-watch's synthetic "working") is about something else. A blocking decision ends only by
   answer, its `wait` detaching for 3s (orphan timer; an Esc/interrupt kills the hook), session end, expiry (100s),

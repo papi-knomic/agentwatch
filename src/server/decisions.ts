@@ -38,7 +38,7 @@ export type ResolveResult = "ok" | "unknown" | "gone" | "answered" | "invalid";
 
 export type CreateResult = { id: string } | { id: null; reason: "session_cap" | "total_cap" | "invalid" };
 
-export type DebugOutcome = "registered" | "no_viewer" | "unknown_session" | "cap" | "invalid";
+export type DebugOutcome = "registered" | "no_viewer" | "unknown_session" | "cap" | "invalid" | "skipped";
 export type DebugEnd =
   | "resolved_allow"
   | "resolved_deny"
@@ -68,6 +68,8 @@ export interface DebugRecord {
   agentId: boolean;
   hostClass: "concurrent" | "blocking";
   outcome: DebugOutcome;
+  /** For outcome "skipped": a fixed identifier from the adapter, never user text. */
+  reason?: string;
   end?: DebugEnd;
   endedAt?: string;
 }
@@ -184,8 +186,13 @@ export class DecisionStore {
   }
 
   /** Logs an attempt that never became a decision (no viewer, unknown session, invalid body). */
-  logRejected(input: NewDecision, outcome: Exclude<DebugOutcome, "registered">): void {
+  logRejected(input: NewDecision, outcome: Exclude<DebugOutcome, "registered" | "skipped">): void {
     this.#log(input, outcome);
+  }
+
+  /** Logs a `decide` call an adapter deliberately left alone (no card, no hold). */
+  logSkipped(input: NewDecision, reason: string): void {
+    this.#log(input, "skipped").reason = truncate(reason, 64);
   }
 
   #log(input: NewDecision, outcome: DebugOutcome): DebugRecord {

@@ -482,6 +482,36 @@ export function createAppServer(options: AppServerOptions): Server {
         return await registerDecision(await readJsonBody(req), res);
       }
 
+      case "POST /api/decisions/skipped": {
+        if (!hasToken()) throw new HttpError(401, "Missing or invalid token");
+        const body = await readJsonBody(req);
+        const r = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+        if (
+          typeof r.tool !== "string" ||
+          r.tool === "" ||
+          r.tool.length > 64 ||
+          typeof r.sessionId !== "string" ||
+          r.sessionId === "" ||
+          r.sessionId.length > 256 ||
+          typeof r.toolName !== "string" ||
+          typeof r.reason !== "string" ||
+          !/^[a-z0-9-]{1,64}$/.test(r.reason)
+        ) {
+          throw new HttpError(400, "Invalid skip record");
+        }
+        decisions.logSkipped(
+          {
+            sessionKey: sessionKey(r.tool, r.sessionId),
+            kind: "question",
+            toolName: truncate(r.toolName, 100),
+            concurrent: r.concurrent === true,
+            tool: r.tool,
+          },
+          r.reason,
+        );
+        return sendJson(res, 200, { ok: true });
+      }
+
       case "POST /api/presence": {
         // Same trust as the other dashboard writes: browsers can't forge Origin, local processes can (see AGENTS.md).
         // Remote requests got here with a valid device cookie and their own https Origin.
