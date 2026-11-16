@@ -204,12 +204,12 @@ Security: the approve/deny endpoint checks that the request carries the dashboar
 pages (browsers can't forge `Origin`) but it is not authentication: any local process can send that header, so any
 program on this computer that can reach `127.0.0.1` can approve a pending command or switch this setting. Programs
 running as you can run commands anyway, but on a shared multi-user machine other users could too, so **do not turn
-this on on a shared machine**. A dashboard login is planned together with phone access. The dashboard's state and
+this on on a shared machine**. Phone access (below) is stricter: phones need a pairing cookie, but a dashboard login for the PC itself doesn't exist yet. The dashboard's state and
 live stream also refuse requests from other web pages. The command or file path shown on
-the card (up to 300 characters; plans up to 2000) is kept in memory only while the prompt is open and is never written
+the card (up to 300 characters; plans up to 4000) is kept in memory only while the prompt is open and is never written
 to disk. Grok isn't supported: its hooks have no permission-prompt event, and a `PreToolUse` "allow" only means
-"not blocked", it never approves a pending prompt. OpenCode has an HTTP API for permissions and questions, possible
-later.
+"not blocked", it never approves a pending prompt. OpenCode permissions and questions are answered through its plugin
+(see above).
 
 ### Phone notifications (ntfy, opt-in)
 
@@ -265,7 +265,7 @@ and `opencode`. Any setting you leave out keeps its default, so you only need to
   "token": "…",                 // generated; hooks use it to authenticate
   "notifications": true,        // master switch
   "taskTitles": true,           // show each session's name
-  "remoteActions": false,       // answer Claude Code prompts from the dashboard (see above)
+  "remoteActions": false,       // answer Claude Code, Codex and OpenCode prompts from the dashboard (see above)
   "remote": { "enabled": false, "hosts": [] },  // phone access through Tailscale Serve (see below)
   "phone": { "enabled": false },  // push notifications to your phone through ntfy (see above)
   "tools": {
@@ -290,22 +290,56 @@ Off by default. You can watch your sessions (and, per phone, answer prompts) fro
 HTTPS. AgentWatch itself still listens on 127.0.0.1 only; Tailscale Serve is a proxy you run, and nothing is
 exposed to the internet.
 
-Open **Settings** > **Phone** on the PC's dashboard and follow the three steps:
+### What is Tailscale?
+
+[Tailscale](https://tailscale.com/download) is a private network that links your own devices, like a VPN that only
+connects your devices to each other. The personal plan is free. For this feature your phone talks to your PC through
+that private network; nothing is put on the public internet, and Tailscale only relays the traffic if the two devices
+can't connect directly (it is encrypted end to end either way).
+
+### Before you start
+
+- A free Tailscale account.
+- Tailscale installed and signed in on the PC (the tray icon says "Connected").
+- On the phone: install the Tailscale app, sign in with the **same account**, and keep its VPN switch on.
+- In the [Tailscale admin console](https://login.tailscale.com/admin/dns), turn on
+  [MagicDNS](https://tailscale.com/kb/1081/magicdns) and
+  [HTTPS certificates](https://tailscale.com/kb/1153/enabling-https). Note that enabling HTTPS publishes your machine
+  name (`<machine>.<tailnet>.ts.net`) in public certificate-transparency logs, so pick a machine name you don't mind
+  being public.
+
+### Set it up
+
+Open **Settings** > **Phone** on the PC's dashboard. The **Set up phone** panel has three steps:
 
 1. **On this PC:** press **Turn on phone access**. AgentWatch checks Tailscale and runs
    `tailscale serve --bg --yes --https=443 http://127.0.0.1:<port>` for you, only when you press the button. If
    Tailscale isn't installed or signed in, the panel says so. If your tailnet hasn't enabled HTTPS yet, it shows a link to
    Tailscale's page for that; enable it and press the button again. If port 443 already serves something else, AgentWatch
-   won't touch it.
-2. **On your phone:** install Tailscale (same account as the PC) and, for notifications, the ntfy app (links in the panel).
+   won't touch it. When it works, the panel says "Phone access is on at https://<machine>.<tailnet>.ts.net".
+2. **On your phone:** install **Tailscale** and sign in with the same account as this PC (download link in the panel). For
+   notifications, also install **ntfy** (Google Play or App Store links in the panel).
 3. **Pair:** keep **Send notifications to this phone** ticked (it turns on ntfy with a fresh random topic on ntfy.sh and
-   generic text only), press **Show pairing code**, scan the QR code with the phone's camera and name the phone. On the phone
-   tap **Get notifications** to open ntfy subscribed to your topic. The panel shows "Paired: <name>".
+   generic text only), press **Show pairing code**, scan the QR code with the phone's camera (Tailscale must be on) and
+   name the phone. The code works once and expires in 2 minutes. On the phone tap **Get notifications** to open ntfy
+   subscribed to your topic. The panel shows "Paired: <name>".
 
-To let a phone approve Claude Code prompts, tick **Allow approvals** for it in the same panel. Without it the phone can
-only watch and dismiss. **Revoke** removes a phone at once. **Turn off phone access** disables remote access and, only if
+The address to open on the phone is `https://<machine>.<tailnet>.ts.net` (shown in step 1; the pairing QR code opens it
+for you). It works only with Tailscale on, and only on your devices.
+
+### Test it
+
+1. On the phone, with Tailscale on, scan the QR code, name the phone and press **Pair**. You should see your sessions.
+2. Send a prompt in an agent on the PC and watch its row change on the phone.
+3. To answer prompts from the phone, tick **Allow approvals** for it on the PC (same panel). Without it the phone can
+   only watch and dismiss.
+4. Under *Settings → Phone → Advanced: hosts, ntfy server, paired devices*, press **Send test** (or run
+   `agentwatch notify-test --phone`) and check that the push arrives in the ntfy app.
+
+**Revoke** removes a phone at once. **Turn off phone access** disables remote access and, only if
 AgentWatch created the Serve mapping and it still points at AgentWatch, runs `tailscale serve --https=443 off`. Anything
 else you set up in Tailscale is left alone. The old manual settings are under *Settings → Phone → Advanced*.
+See also Tailscale's [Serve docs](https://tailscale.com/kb/1242/tailscale-serve).
 
 Never use **Tailscale Funnel** for this: it publishes the dashboard on the public internet. AgentWatch only supports Serve.
 Remote requests need a device cookie from pairing (stored hashed in `~/.agentwatch/devices.json`); the token is never
@@ -346,6 +380,25 @@ run `agentwatch start` in a terminal (Ctrl+C to stop).
 
 **A row is stuck.** Use the × on the row to dismiss it. Sessions whose agent process has exited (Claude Code)
 disappear on their own, and finished ones clear after an hour.
+
+**The phone can't open the address.** Check that Tailscale is on on the phone (VPN switch), that it is signed in to the
+same account as the PC, and that MagicDNS is enabled. Opening the PC's `100.x` Tailscale IP won't work: AgentWatch
+accepts only the configured host name (`<machine>.<tailnet>.ts.net`) and refuses any other `Host`.
+
+**Certificate or HTTPS error on the phone.** HTTPS certificates aren't enabled for your tailnet (see "Before you
+start"). The first load can take a few seconds while Tailscale issues the certificate; retry.
+
+**The phone shows "This phone isn't paired".** Pair again from **Settings** > **Phone** on the PC: press **Show pairing
+code** and scan the new QR code. A code expires after 2 minutes and works once, and the phone's pairing is lost if you
+revoke it there.
+
+**Phone push doesn't arrive.** Make sure the ntfy app is subscribed to your topic (tap **Get notifications** on the
+phone), notifications are allowed for ntfy, and phone notifications are on (*Settings → Phone → Advanced*).
+Then run `agentwatch notify-test --phone`.
+
+**"Turn on phone access" says port 443 is used by something else.** Another Tailscale Serve mapping already uses
+HTTPS port 443. AgentWatch won't overwrite it: remove that mapping in Tailscale (`tailscale serve status`), or set
+the host up by hand under *Settings → Phone → Advanced*.
 
 ## How it works
 
