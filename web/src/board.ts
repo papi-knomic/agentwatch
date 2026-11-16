@@ -69,7 +69,7 @@ export function projectName(cwd: string): string {
  * The server sends cwd with its on-disk casing; folding Windows drive paths here as well keeps c:\x and
  * C:\x together for sessions saved before it did.
  */
-function projectKey(cwd: string): string {
+export function projectKey(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
   return /^[a-z]:[\\/]/i.test(trimmed) ? trimmed.replace(/\//g, "\\").toLowerCase() : trimmed;
 }

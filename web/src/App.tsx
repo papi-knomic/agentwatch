@@ -6,6 +6,8 @@ import {
   isFinished,
   matchesAgent,
   needsYou,
+  type Project,
+  projectKey,
   projectName,
   sortByUrgency,
 } from "./board";
@@ -134,6 +136,18 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
   const cardKeys = new Set(decisions.map((d) => d.sessionKey));
   const waitingRows = sortByUrgency(sessions.filter((s) => needsYou(s) && !cardKeys.has(s.key)));
   const projects = groupByProject(filtered.filter((s) => !needsYou(s) && !cardKeys.has(s.key)));
+  // Folders show how many of their sessions are waiting in "Needs you"; a folder with only those still gets its header.
+  const aboveByProject = new Map<string, number>();
+  const emptyFolders = new Map<string, Project>();
+  for (const s of sessions) {
+    if (!needsYou(s)) continue;
+    const key = projectKey(s.cwd);
+    aboveByProject.set(key, (aboveByProject.get(key) ?? 0) + 1);
+    if (!projects.some((p) => p.key === key) && !emptyFolders.has(key)) {
+      emptyFolders.set(key, { key, name: projectName(s.cwd), cwd: s.cwd, sessions: [] });
+    }
+  }
+  const listProjects = filtersActive ? projects : [...projects, ...emptyFolders.values()];
 
   // Table view: every filtered row, sorted; needs-you rows lead by default.
   const tableRows = sortSessions(filtered, sort, (s) => toolLabel(s.tool));
@@ -142,43 +156,52 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
     : null;
   const hiddenAttention = allAttention - filtered.filter(needsYou).length;
   const noMatches =
-    view === "list" ? projects.length + waitingRows.length + decisions.length === 0 : tableRows.length === 0;
+    view === "list"
+      ? listProjects.length + waitingRows.length + decisions.length === 0
+      : tableRows.length === 0;
+
+  const dir = route.page === "settings" || view === "list" ? "A" : "C";
 
   return (
-    <div className="app">
+    <div className={`app aw dir-${dir}`}>
       <header className="top">
-        <div className="top-in">
-          <div className="brand">
-            <Logo />
-            <span>{APP_DISPLAY_NAME}</span>
-          </div>
-          <Counts attention={allAttention} working={working} done={finishedAll} className="counts" />
-          <span className="sp" />
-          <ConnectionBadge connection={connection} />
-          {/* Setup is loopback-only on the server, so a paired phone gets no gear. */}
-          {!remote && (
-            <a
-              className={`gear btn ico ghost${route.page === "settings" ? " on" : ""}`}
-              href={route.page === "settings" ? "#/" : settingsHref()}
-              aria-label={needsSetupAttention ? "Settings (needs attention)" : "Settings"}
-              title="Settings"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M6.48 3.03L6.8 1.2H9.2L9.52 3.03A5.2 5.2 0 0 1 10.44 3.41L11.96 2.35L13.65 4.04L12.59 5.56A5.2 5.2 0 0 1 12.97 6.48L14.8 6.8V9.2L12.97 9.52A5.2 5.2 0 0 1 12.59 10.44L13.65 11.96L11.96 13.65L10.44 12.59A5.2 5.2 0 0 1 9.52 12.97L9.2 14.8H6.8L6.48 12.97A5.2 5.2 0 0 1 5.56 12.59L4.04 13.65L2.35 11.96L3.41 10.44A5.2 5.2 0 0 1 3.03 9.52L1.2 9.2V6.8L3.03 6.48A5.2 5.2 0 0 1 3.41 5.56L2.35 4.04L4.04 2.35L5.56 3.41A5.2 5.2 0 0 1 6.48 3.03Z" />
-                <circle cx="8" cy="8" r="2.25" />
-              </svg>
-              {needsSetupAttention && <span className="dot" />}
-            </a>
-          )}
+        <div className="brand">
+          <Logo />
+          <span>{APP_DISPLAY_NAME}</span>
         </div>
+        <Counts attention={allAttention} working={working} done={finishedAll} className="counts" />
+        <span className="sp" />
+        {/* Wide screens keep this in the header; on a phone it moves into the filters. */}
+        {route.page !== "settings" && finishedAll > 0 && (
+          <button
+            type="button"
+            className="chip hide-done"
+            aria-pressed={hideFinished}
+            onClick={() => setHideFinished(!hideFinished)}
+          >
+            Hide finished
+          </button>
+        )}
+        <ConnectionBadge connection={connection} />
+        {/* Setup is loopback-only on the server, so a paired phone gets no gear. */}
+        {!remote && (
+          <a
+            className={`gear btn ico ghost${route.page === "settings" ? " on" : ""}`}
+            href={route.page === "settings" ? "#/" : settingsHref()}
+            aria-label={needsSetupAttention ? "Settings (needs attention)" : "Settings"}
+            title="Settings"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6.48 3.03L6.8 1.2H9.2L9.52 3.03A5.2 5.2 0 0 1 10.44 3.41L11.96 2.35L13.65 4.04L12.59 5.56A5.2 5.2 0 0 1 12.97 6.48L14.8 6.8V9.2L12.97 9.52A5.2 5.2 0 0 1 12.59 10.44L13.65 11.96L11.96 13.65L10.44 12.59A5.2 5.2 0 0 1 9.52 12.97L9.2 14.8H6.8L6.48 12.97A5.2 5.2 0 0 1 5.56 12.59L4.04 13.65L2.35 11.96L3.41 10.44A5.2 5.2 0 0 1 3.03 9.52L1.2 9.2V6.8L3.03 6.48A5.2 5.2 0 0 1 3.41 5.56L2.35 4.04L4.04 2.35L5.56 3.41A5.2 5.2 0 0 1 6.48 3.03Z" />
+              <circle cx="8" cy="8" r="2.25" />
+            </svg>
+            {needsSetupAttention && <span className="dot" />}
+          </a>
+        )}
       </header>
-      {/* On a phone the counts get their own row under the header. */}
-      <div className="pcounts-wrap">
-        <Counts attention={allAttention} working={working} done={finishedAll} className="pcounts" />
-      </div>
 
-      <main className="content">
-        {!remote && route.page === "settings" ? (
+      {!remote && route.page === "settings" ? (
+        <main className="content">
           <SettingsPage
             tab={route.tab}
             setup={readySetup}
@@ -186,40 +209,46 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
             permission={alerts.permission}
             onEnableAlerts={alerts.enable}
           />
-        ) : (
-          <>
-            {remote && <GetNotifications />}
-            {sessions.length === 0 ? (
-              readySetup && !readySetup.tools.some((tool) => tool.connected) ? (
+        </main>
+      ) : (
+        <>
+          {/* On a phone the counts get their own row under the header. */}
+          <Counts attention={allAttention} working={working} done={finishedAll} className="pcounts" phone />
+          {remote && <GetNotifications />}
+          {sessions.length === 0 ? (
+            <main className="body">
+              {readySetup && !readySetup.tools.some((tool) => tool.connected) ? (
                 <WelcomeCard />
               ) : (
                 <EmptyState connection={connection} showSettings={!remote} />
-              )
-            ) : (
-              <>
-                <Toolbar
-                  query={query}
-                  onQuery={setQuery}
-                  agents={agents}
-                  totalSessions={sessions.length}
-                  agent={agent}
-                  onAgent={setAgent}
-                  status={status}
-                  onStatus={setStatus}
-                  statusCounts={counts}
-                  hasFinished={finishedAll > 0}
-                  hideFinished={hideFinished}
-                  onHideFinished={setHideFinished}
-                  view={view}
-                  onView={setStoredView}
-                  groupTable={groupTable}
-                  onGroupTable={setGroupTable}
-                  sortKey={sort.key}
-                  onSortKey={(key) => setSort({ key, dir: firstDirection(key) })}
-                  permission={alerts.permission}
-                  onEnableAlerts={alerts.enable}
-                />
+              )}
+            </main>
+          ) : (
+            <>
+              <Toolbar
+                query={query}
+                onQuery={setQuery}
+                agents={agents}
+                totalSessions={sessions.length}
+                agent={agent}
+                onAgent={setAgent}
+                status={status}
+                onStatus={setStatus}
+                statusCounts={counts}
+                hasFinished={finishedAll > 0}
+                hideFinished={hideFinished}
+                onHideFinished={setHideFinished}
+                view={view}
+                onView={setStoredView}
+                groupTable={groupTable}
+                onGroupTable={setGroupTable}
+                sortKey={sort.key}
+                onSortKey={(key) => setSort({ key, dir: firstDirection(key) })}
+                permission={alerts.permission}
+                onEnableAlerts={alerts.enable}
+              />
 
+              <main className="body">
                 {view === "table" && hiddenAttention > 0 && (
                   <p className="filter-note">
                     {hiddenAttention === 1
@@ -236,7 +265,8 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
                     decisions={decisions}
                     waiting={waitingRows}
                     sessionByKey={sessionByKey}
-                    projects={projects}
+                    projects={listProjects}
+                    aboveByProject={aboveByProject}
                     collapsed={collapsedProjects}
                     onToggleProject={toggleProject}
                     ctx={{ ...ctx, now: second }}
@@ -269,17 +299,17 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
 
                 {hiddenFinished > 0 && (
                   <p className="hidden-note">
-                    {hiddenFinished} finished {hiddenFinished === 1 ? "session" : "sessions"} hidden ·{" "}
+                    {hiddenFinished} finished {hiddenFinished === 1 ? "session is" : "sessions are"} hidden.{" "}
                     <button type="button" className="link" onClick={() => setHideFinished(false)}>
-                      Show
+                      Show them
                     </button>
                   </p>
                 )}
-              </>
-            )}
-          </>
-        )}
-      </main>
+              </main>
+            </>
+          )}
+        </>
+      )}
 
       {view === "table" && picked && pickedSession && (
         <SidePanel
@@ -297,9 +327,9 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
 function Logo() {
   return (
     <svg className="logo" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="1" y="1" width="8" height="8" rx="2.5" />
-      <rect x="11" y="1" width="8" height="8" rx="2.5" />
-      <rect x="1" y="11" width="8" height="8" rx="2.5" />
+      <rect x="1" y="1" width="8" height="8" rx="2" />
+      <rect x="11" y="1" width="8" height="8" rx="2" opacity=".45" />
+      <rect x="1" y="11" width="8" height="8" rx="2" opacity=".45" />
       <rect className="logo-accent" x="11" y="11" width="8" height="8" rx="4" />
     </svg>
   );
@@ -310,26 +340,35 @@ function Counts({
   working,
   done,
   className,
+  phone = false,
 }: {
   attention: number;
   working: number;
   done: number;
   className: string;
+  phone?: boolean;
 }) {
+  const items = [
+    { status: "needs_input", n: attention, label: "need you", hot: attention > 0 },
+    { status: "working", n: working, label: "working", hot: false },
+    { status: "done", n: done, label: "done", hot: false },
+  ] as const;
   return (
     <fieldset className={className} aria-label="Session counts">
-      <span className={attention > 0 ? "cnt hot" : "cnt"}>
-        <StatusIcon status="needs_input" decorative />
-        <b>{attention}</b> need you
-      </span>
-      <span className="cnt">
-        <StatusIcon status="working" decorative />
-        <b>{working}</b> working
-      </span>
-      <span className="cnt">
-        <StatusIcon status="done" decorative />
-        <b>{done}</b> done
-      </span>
+      {items.map((item) =>
+        phone ? (
+          <div key={item.status} className={item.hot ? "pc hot" : "pc"}>
+            <StatusIcon status={item.status} decorative />
+            <b>{item.n}</b>
+            <span>{item.label}</span>
+          </div>
+        ) : (
+          <span key={item.status} className={item.hot ? "cnt hot" : "cnt"}>
+            <StatusIcon status={item.status} decorative />
+            <b>{item.n}</b> {item.label}
+          </span>
+        ),
+      )}
     </fieldset>
   );
 }
@@ -348,16 +387,12 @@ function ConnectionBadge({ connection }: { connection: Connection }) {
 function WelcomeCard() {
   const tab: SettingsTab = "agents";
   return (
-    <div className="empty">
+    <div className="welcome">
       <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-      <p className="empty-lead">
-        Connect your agents once, then start a new session in each tool. They all show up here.
-      </p>
-      <p className="empty-actions">
-        <a className="primary-button" href={settingsHref(tab)}>
-          Set up
-        </a>
-      </p>
+      <p>Connect your agents once, then start a new session in each tool. They all show up here.</p>
+      <a className="btn pri" href={settingsHref(tab)}>
+        Set up
+      </a>
     </div>
   );
 }
@@ -365,17 +400,15 @@ function WelcomeCard() {
 function EmptyState({ connection, showSettings }: { connection: Connection; showSettings: boolean }) {
   if (connection !== "live") {
     return (
-      <div className="empty">
-        <p className="empty-lead">Connecting to the local server…</p>
+      <div className="welcome">
+        <p>Connecting to the local server…</p>
       </div>
     );
   }
   return (
-    <div className="empty">
+    <div className="welcome">
       <h2>No agent sessions yet</h2>
-      <p className="empty-lead">
-        Sessions appear here as soon as an agent with hooks installed starts or finishes a turn.
-      </p>
+      <p>Sessions appear here as soon as an agent with hooks installed starts or finishes a turn.</p>
       <ol>
         <li>
           Install the hooks <code>{APP_NAME} install --tool claude-code</code>
@@ -383,7 +416,7 @@ function EmptyState({ connection, showSettings }: { connection: Connection; show
         <li>Start a new session in VS Code, a terminal or the desktop app.</li>
       </ol>
       {showSettings && (
-        <p className="empty-more">
+        <p>
           Agents are managed in <a href={settingsHref()}>Settings</a>.
         </p>
       )}

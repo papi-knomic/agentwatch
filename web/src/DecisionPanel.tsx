@@ -4,6 +4,7 @@ import {
   type DecisionQuestion,
   PLAN_FEEDBACK_MAX,
 } from "../../src/core/decision-types.js";
+import { renderMarkdown } from "./markdown";
 import { settingsHref } from "./route";
 import { type PendingDecision, type ResolveOutcome, resolveDecision } from "./useAgentStream";
 
@@ -57,12 +58,15 @@ export function DecisionPanel({
   decision,
   canAnswer = true,
   host,
+  caption,
 }: {
   decision: PendingDecision;
   /** false on a paired phone that isn't allowed to approve: it sees the request but can't answer it. */
   canAnswer?: boolean;
   /** The session's host, to name where a concurrent prompt is also shown. */
   host?: string;
+  /** "subagent · name" when a subagent is the one asking. */
+  caption?: string | null;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [feedback, setFeedback] = useState("");
@@ -79,13 +83,13 @@ export function DecisionPanel({
     <fieldset className="decision" aria-label={`${decision.toolName} request`}>
       {decision.kind === "plan" ? (
         <>
-          <p className="decision-title">Approve this plan?</p>
-          {/* Plain text in a <pre>: the plan is untrusted Markdown and is never rendered as HTML. */}
-          {decision.preview && <pre className="decision-preview decision-plan">{decision.preview}</pre>}
+          <p className="dc-q">Approve this plan?</p>
+          {/* Untrusted plan text: the renderer only builds React elements, never HTML. */}
+          {decision.preview && <div className="pv plan">{renderMarkdown(decision.preview)}</div>}
           {canAnswer && (
             <>
-              <label className="decision-feedback" htmlFor={feedbackId}>
-                If you keep planning, tell Claude what to change (optional)
+              <label className="fb" htmlFor={feedbackId}>
+                What should change? (optional)
                 <textarea
                   id={feedbackId}
                   value={feedback}
@@ -95,7 +99,7 @@ export function DecisionPanel({
                   onChange={(e) => setFeedback(e.target.value)}
                 />
               </label>
-              <div className="decision-buttons">
+              <div className="acts-row">
                 <button
                   type="button"
                   className="btn pri"
@@ -106,7 +110,7 @@ export function DecisionPanel({
                 </button>
                 <button
                   type="button"
-                  className="btn dng"
+                  className="btn"
                   disabled={sending || over}
                   onClick={() =>
                     void send(
@@ -122,12 +126,21 @@ export function DecisionPanel({
         </>
       ) : decision.kind === "permission" ? (
         <>
-          <p className="decision-title">
-            Allow <strong>{decision.toolName}</strong>?
+          <p className="dc-q">
+            {decision.toolName === "Bash" ? "Run this Bash command?" : `Allow ${decision.toolName}?`}
+            {caption && (
+              <span className="badge sub" title="Asked by a subagent">
+                {caption}
+              </span>
+            )}
           </p>
-          {decision.preview && <pre className="decision-preview">{decision.preview}</pre>}
+          {decision.preview && (
+            <pre className="pv">
+              {decision.toolName === "Bash" ? `$ ${decision.preview}` : decision.preview}
+            </pre>
+          )}
           {canAnswer && (
-            <div className="decision-buttons">
+            <div className="acts-row">
               <button
                 type="button"
                 className="btn pri"
@@ -155,21 +168,21 @@ export function DecisionPanel({
           onSubmit={(answers) => void send({ answers })}
         />
       )}
-      {phase === "ok" && <p className="decision-note">Sent. Claude Code continues in a moment.</p>}
-      {OUTCOME_NOTE[phase] && <p className="decision-note decision-warn">{OUTCOME_NOTE[phase]}</p>}
+      {phase === "ok" && <p className="note ok">Sent. Claude Code continues in a moment.</p>}
+      {OUTCOME_NOTE[phase] && <p className="note warn">{OUTCOME_NOTE[phase]}</p>}
       {!canAnswer && (
-        <p className="decision-note decision-warn">
+        <p className="note warn">
           Answer this at your PC. To answer from this phone, turn on "Allow approvals" for it in the dashboard
           on your PC.
         </p>
       )}
       {canAnswer && !over && decision.concurrent === true && (
-        <p className="decision-note">
-          Also in {concurrentPlace(host, decision.sessionKey)}. Answer here or there.
+        <p className="note">
+          Also showing in {concurrentPlace(host, decision.sessionKey)}. Answer here or there.
         </p>
       )}
       {canAnswer && !over && decision.concurrent !== true && (
-        <p className="decision-note">
+        <p className="note">
           Not in the terminal until you answer.
           <HoldInfo hold={decision.backgroundHold ?? "full"} />
         </p>
@@ -216,17 +229,17 @@ function QuestionForm({
   return (
     <>
       {questions.map((q, index) => (
-        <fieldset className="decision-question" key={q.question} disabled={disabled}>
-          <legend>
-            {q.header && <span className="decision-header">{q.header}</span>}
+        <fieldset className="qset" key={q.question} disabled={disabled}>
+          <p className="dc-q">
+            {q.header && <span className="badge">{q.header}</span>}
             {q.question}
-          </legend>
-          <ul className="decision-options">
+          </p>
+          <ul className="opts">
             {q.options.map((option) => {
               const checked = picked[q.question]?.includes(option.label) ?? false;
               return (
                 <li key={option.label}>
-                  <label className={checked ? "decision-option on" : "decision-option"}>
+                  <label className={checked ? "opt on" : "opt"}>
                     <input
                       type={q.multiSelect ? "checkbox" : "radio"}
                       name={`${uid}-${index}`}
@@ -242,12 +255,13 @@ function QuestionForm({
               );
             })}
           </ul>
+          <p className="note">{q.multiSelect ? "Pick one or more." : "Pick one."}</p>
         </fieldset>
       ))}
       {!hideSubmit && (
-        <div className="decision-buttons">
+        <div className="acts-row">
           <button type="button" className="btn pri" disabled={disabled || !complete} onClick={submit}>
-            Submit
+            Send answer
           </button>
         </div>
       )}

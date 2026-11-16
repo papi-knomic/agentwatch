@@ -116,7 +116,16 @@ export function DismissButton({ sessionKey, name }: { sessionKey: string; name: 
 type OpenState = "idle" | "opening" | "failed";
 
 /** Shows progress right away: VS Code takes about a second to switch windows and then tabs. */
-export function OpenButton({ sessionKey, target }: { sessionKey: string; target: string }) {
+export function OpenButton({
+  sessionKey,
+  target,
+  short = false,
+}: {
+  sessionKey: string;
+  target: string;
+  /** Table rows show just the app's name ("VS Code"); the list says "Open in VS Code". */
+  short?: boolean;
+}) {
   const [state, setState] = useState<OpenState>("idle");
 
   useEffect(() => {
@@ -133,7 +142,7 @@ export function OpenButton({ sessionKey, target }: { sessionKey: string; target:
   return (
     <button
       type="button"
-      className={`btn sm open${state === "failed" ? " dng" : ""}`}
+      className={`btn sm open${state === "failed" ? " dng" : ""}${state === "opening" ? " opening" : ""}`}
       title={`Open this session in ${target}`}
       aria-label={state === "idle" ? `Open in ${target}` : undefined}
       disabled={state === "opening"}
@@ -148,7 +157,15 @@ export function OpenButton({ sessionKey, target }: { sessionKey: string; target:
           <path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5L7.5 8.5" />
         </svg>
       )}
-      <span>{state === "opening" ? "Opening" : state === "failed" ? "Couldn't open" : "Open"}</span>
+      <span>
+        {state === "opening"
+          ? "Opening"
+          : state === "failed"
+            ? "Couldn't open"
+            : short
+              ? target
+              : `Open in ${target}`}
+      </span>
     </button>
   );
 }

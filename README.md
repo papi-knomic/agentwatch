@@ -410,6 +410,10 @@ Each tool is one folder in `src/adapters/`. See [AGENTS.md](AGENTS.md#adding-sup
 checklist. In short: verify the tool's hook docs, convert its events into the shared format, add an
 installer that's safe to run twice and fully reversible, and add fixtures and tests.
 
+## Third-party fonts
+
+The dashboard bundles Geist and Geist Mono (variable fonts, from `@fontsource-variable/geist` and `@fontsource-variable/geist-mono`), licensed under the SIL Open Font License 1.1. The licence texts ship in `dist/web/fonts/` (`OFL-Geist.txt`, `OFL-Geist-Mono.txt`), copied from the LICENSE files of those packages.
+
 ## License
 
 [MIT](LICENSE)

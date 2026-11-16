@@ -11,6 +11,7 @@ import {
   openTargetFor,
   parseStatusFilter,
   parseView,
+  shortenPath,
   sortSessions,
   statusCounts,
   withDecisions,
@@ -194,5 +195,46 @@ describe("anyBlocking", () => {
     expect(anyBlocking([])).toBe(false);
     expect(anyBlocking([decision("a", { concurrent: true })])).toBe(false);
     expect(anyBlocking([decision("a", { concurrent: true }), decision("b")])).toBe(true);
+  });
+});
+
+describe("shortenPath", () => {
+  const scratch =
+    "C:\\Users\\someone\\AppData\\Local\\Claude-Data\\claude_xxx\\scratch-workspaces\\6a45d61a-1111-2222-3333-444444444444\\78aa963c-aaaa-bbbb-cccc-dddddddddddd";
+
+  it("leaves a short path alone", () => {
+    expect(shortenPath("/projects/Web-App")).toBe("/projects/Web-App");
+    expect(shortenPath("C:workapp")).toBe("C:workapp");
+  });
+
+  it("replaces a Windows user home with ~ and keeps the rest", () => {
+    expect(shortenPath("C:\\Users\\someone\\code\\app")).toBe("~\\code\\app");
+  });
+
+  it("replaces a macOS or Linux home with ~", () => {
+    expect(shortenPath("/Users/someone/code/app")).toBe("~/code/app");
+    expect(shortenPath("/home/someone/code/app")).toBe("~/code/app");
+  });
+
+  it("does not treat a path that only starts with Users as a home", () => {
+    expect(shortenPath("C:\\Users")).toBe("C:\\Users");
+  });
+
+  it("middle-ellipsizes a long scratch path to first segment, ellipsis, and last two segments", () => {
+    const short = shortenPath(scratch);
+    expect(short).toBe("~\\…\\6a45d61a-1111-2222-3333-444444444444\\78aa96…");
+    expect(short.length).toBeLessThanOrEqual(48);
+  });
+
+  it("keeps a long path within the limit when the tail is short", () => {
+    const deep = `/home/someone/${"a-very-long-folder-name/".repeat(4)}end`;
+    const short = shortenPath(deep);
+    expect(short.length).toBeLessThanOrEqual(48);
+    expect(short.startsWith("~/…/")).toBe(true);
+    expect(short.endsWith("end")).toBe(true);
+  });
+
+  it("uses the same limit when asked", () => {
+    expect(shortenPath("C:\\Users\\someone\\alpha\\beta\\gamma\\delta", 20)).toBe("~\\…\\gamma\\delta");
   });
 });

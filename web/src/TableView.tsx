@@ -1,27 +1,21 @@
 // biome-ignore-all lint/a11y/useSemanticElements: a div grid keeps the phone layout; ARIA table roles carry the semantics
 // biome-ignore-all lint/a11y/useFocusableInteractive: rows and headers are containers; the buttons inside are the focus targets
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef } from "react";
-import {
-  isStalled,
-  needsApprovalHint,
-  type Project,
-  projectName,
-  statusDuration,
-  statusSince,
-} from "./board";
+import { isStalled, needsApprovalHint, type Project, projectName, statusDuration } from "./board";
 import { DecisionCard } from "./DecisionCard";
-import { detailFor, StalledBadge, sessionName, type ViewContext } from "./ListView";
+import { detailFor, StalledBadge, sessionName, TimeCell, type ViewContext } from "./ListView";
 import { DismissButton, OpenButton, STATUS_LABEL, StatusIcon, ToolTag } from "./parts";
 import { dismissSession, type PendingDecision, type Session } from "./useAgentStream";
-import { openTargetFor, type Sort, type SortKey } from "./view";
+import { openTargetFor, type Sort, type SortKey, shortenPath } from "./view";
 
-const COLUMNS: { key: SortKey; label: string; cls: string }[] = [
-  { key: "status", label: "Status", cls: "c-status" },
-  { key: "agent", label: "Agent", cls: "c-agent" },
-  { key: "project", label: "Project", cls: "c-proj" },
-  { key: "task", label: "Task", cls: "c-task" },
-  { key: "host", label: "Host", cls: "c-host" },
-  { key: "time", label: "Time", cls: "c-time" },
+/** The first column is the status icon: its header shows only an arrow while the table is sorted by status. */
+const COLUMNS: { key: SortKey; label: string; cls: string; visible: boolean }[] = [
+  { key: "status", label: "Status", cls: "c-status", visible: false },
+  { key: "agent", label: "agent", cls: "c-agent", visible: true },
+  { key: "project", label: "project", cls: "c-proj", visible: true },
+  { key: "task", label: "task", cls: "c-task", visible: true },
+  { key: "host", label: "host", cls: "c-host", visible: true },
+  { key: "time", label: "time", cls: "c-time", visible: true },
 ];
 
 function Header({ sort, onSort }: { sort: Sort; onSort: (key: SortKey) => void }) {
@@ -35,9 +29,13 @@ function Header({ sort, onSort }: { sort: Sort; onSort: (key: SortKey) => void }
           aria-sort={sort.key === col.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
         >
           <button type="button" onClick={() => onSort(col.key)}>
-            {col.label}
+            {col.visible ? col.label : <span className="sr">{col.label}</span>}
             <span className="ar" aria-hidden="true">
-              {sort.key === col.key ? (sort.dir === "asc" ? "▲" : "▼") : ""}
+              {sort.key !== col.key || (col.key === "status" && sort.dir === "asc")
+                ? ""
+                : sort.dir === "asc"
+                  ? "▲"
+                  : "▼"}
             </span>
           </button>
         </div>
@@ -67,26 +65,14 @@ function TableRow({
   const name = sessionName(session, false);
   const detail = detailFor(session);
   const openTarget = openTargetFor(session.host);
-  const hot = session.status === "needs_input" || session.status === "error";
   const answerable = decisions.length > 0;
-  const time = (
-    <span
-      className={`time${hot ? ` hot${session.status === "error" ? " e" : ""}` : ""}`}
-      title={new Date(statusSince(session)).toLocaleString()}
-    >
-      {statusDuration(session, ctx.now)}
-    </span>
-  );
-
   return (
     <div
       role="row"
       className={`tr row st-${session.status}${picked ? " picked" : ""}`}
       style={{ "--tool": tool?.color ?? "var(--mu)" } as CSSProperties}
     >
-      <div role="cell" className="c-status">
-        <StatusIcon status={session.status} />
-      </div>
+      <StatusIcon status={session.status} />
       <div role="cell" className="c-agent">
         <ToolTag tool={tool} fallback={session.tool} />
       </div>
@@ -102,15 +88,15 @@ function TableRow({
         >
           {name}
         </button>
-        {isStalled(session) && <StalledBadge />}
         {detail && <span className="ell">{detail}</span>}
+        {isStalled(session) && <StalledBadge />}
         {needsApprovalHint(session) && <em>Approved it? This updates when the command finishes.</em>}
       </div>
       <div role="cell" className="c-host host ell" title={session.host}>
         {session.host}
       </div>
       <div role="cell" className="c-time">
-        {time}
+        <TimeCell session={session} now={ctx.now} />
       </div>
       <div role="cell" className="c-act acts">
         {answerable ? (
@@ -123,7 +109,7 @@ function TableRow({
             Answer
           </button>
         ) : (
-          openTarget && !ctx.remote && <OpenButton sessionKey={session.key} target={openTarget} />
+          openTarget && !ctx.remote && <OpenButton sessionKey={session.key} target={openTarget} short />
         )}
         <DismissButton sessionKey={session.key} name={name} />
       </div>
@@ -132,10 +118,9 @@ function TableRow({
         {detail}
       </div>
       <div className="meta" aria-hidden="true">
-        {ctx.showTool && <ToolTag tool={tool} fallback={session.tool} />}
-        <span className="host">{project}</span>
-        {session.host && <span className="host">{session.host}</span>}
-        {time}
+        <ToolTag tool={tool} fallback={session.tool} />
+        <span className="host">{session.host ? `${project} · ${session.host}` : project}</span>
+        <TimeCell session={session} now={ctx.now} />
       </div>
     </div>
   );
@@ -182,10 +167,7 @@ export function TableView({
         projects.map((project) => (
           <div role="rowgroup" key={project.key} aria-label={project.name}>
             <div className="gr" title={project.cwd}>
-              <b className="gr-name">{project.name}</b>
-              <span>
-                {project.sessions.length} {project.sessions.length === 1 ? "session" : "sessions"}
-              </span>
+              {`${project.name} ${shortenPath(project.cwd)} (${project.sessions.length})`}
             </div>
             {project.sessions.map(row)}
           </div>
@@ -265,7 +247,7 @@ export function SidePanel({
       >
         <div className="so-h">
           <StatusIcon status={session.status} />
-          <b className="so-title ell" title={name}>
+          <b className="ell" title={name}>
             {name}
           </b>
           <button
@@ -287,35 +269,32 @@ export function SidePanel({
                 key={decision.id}
                 decision={decision}
                 session={session}
-                tool={tool}
                 canAnswer={ctx.canAnswer}
                 now={ctx.now}
-                bare
               />
             ))
           ) : hot ? (
-            <div className="so-note">
-              <p>
-                <b>{detail}</b>
-              </p>
-              <p className="so-hint">
+            <div className="dc">
+              <p className="dc-q">{detail}</p>
+              <p className="note">
                 This can't be answered from the dashboard.
                 {openTarget && !ctx.remote
                   ? ` Open it in ${openTarget} to reply.`
                   : " Reply where the agent runs."}
               </p>
+              {needsApprovalHint(session) && (
+                <p className="note">Approved it? This updates when the command finishes.</p>
+              )}
             </div>
           ) : (
             detail && <p className="so-detail">{detail}</p>
           )}
           <dl className="kv">
-            <dt>Status</dt>
+            <dt>status</dt>
             <dd>
-              <span className="kv-status">
-                <StatusIcon status={session.status} decorative />
-                {STATUS_LABEL[session.status]}
-              </span>{" "}
-              <span className={`time${hot ? " hot" : ""}`}>{statusDuration(session, ctx.now)}</span>
+              {hot
+                ? `${STATUS_LABEL[session.status]}, ${statusDuration(session, ctx.now).toLowerCase()}`
+                : statusDuration(session, ctx.now)}
               {isStalled(session) && (
                 <>
                   {" "}
@@ -323,28 +302,26 @@ export function SidePanel({
                 </>
               )}
             </dd>
-            <dt>Agent</dt>
+            <dt>agent</dt>
             <dd>
               <ToolTag tool={tool} fallback={session.tool} />
             </dd>
-            <dt>Project</dt>
+            <dt>project</dt>
             <dd>{projectName(session.cwd)}</dd>
-            <dt>Folder</dt>
-            <dd className="mono" title={session.cwd}>
-              {session.cwd}
-            </dd>
+            <dt>folder</dt>
+            <dd title={session.cwd}>{shortenPath(session.cwd)}</dd>
             {session.host && (
               <>
-                <dt>Host</dt>
+                <dt>host</dt>
                 <dd>{session.host}</dd>
               </>
             )}
           </dl>
-          <div className="so-acts">
+          <div className="acts-row">
             {openTarget && !ctx.remote && <OpenButton sessionKey={session.key} target={openTarget} />}
             <button
               type="button"
-              className="btn sm"
+              className="btn"
               onClick={() => {
                 void dismissSession(session.key);
                 onClose();

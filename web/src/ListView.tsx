@@ -11,7 +11,7 @@ import { DecisionCard } from "./DecisionCard";
 import { HoldInfo } from "./DecisionPanel";
 import { DismissButton, OpenButton, StatusIcon, ToolTag } from "./parts";
 import type { PendingDecision, Session, ToolInfo } from "./useAgentStream";
-import { anyBlocking, openTargetFor } from "./view";
+import { anyBlocking, openTargetFor, shortenPath } from "./view";
 
 /** What every row and card needs from the dashboard. */
 export interface ViewContext {
@@ -51,21 +51,36 @@ export function StalledBadge() {
   );
 }
 
-export function SessionRow({
-  session,
-  ctx,
-  showProject,
-}: {
-  session: Session;
-  ctx: ViewContext;
-  showProject: boolean;
-}) {
+/** The time column keeps the real wording ("Waiting 7m"); rows that need you get the status colour. */
+export function TimeCell({ session, now }: { session: Session; now: number }) {
+  const hot = session.status === "needs_input" || session.status === "error";
+  return (
+    <span
+      className={`time${hot ? ` hot${session.status === "error" ? " e" : ""}` : ""}`}
+      title={new Date(statusSince(session)).toLocaleString()}
+    >
+      {statusDuration(session, now)}
+    </span>
+  );
+}
+
+function Actions({ session, ctx, name }: { session: Session; ctx: ViewContext; name: string }) {
+  const openTarget = openTargetFor(session.host);
+  return (
+    <div className="acts">
+      {openTarget && !ctx.remote && <OpenButton sessionKey={session.key} target={openTarget} />}
+      <DismissButton sessionKey={session.key} name={name} />
+    </div>
+  );
+}
+
+/** A row in a project folder. */
+export function SessionRow({ session, ctx }: { session: Session; ctx: ViewContext }) {
   const tool = ctx.toolById.get(session.tool);
   const title = session.title?.trim() ? session.title : undefined;
-  const name = sessionName(session, showProject);
+  // Inside a folder the project is already the heading.
+  const name = sessionName(session, false);
   const detail = detailFor(session);
-  const openTarget = openTargetFor(session.host);
-  const hot = session.status === "needs_input" || session.status === "error";
 
   return (
     <li
@@ -73,38 +88,58 @@ export function SessionRow({
       style={{ "--tool": tool?.color ?? "var(--mu)" } as CSSProperties}
     >
       <StatusIcon status={session.status} />
-      <span className="t">
+      <div className="t">
         <span className={title ? "ell" : "ell untitled"} title={title ?? session.cwd}>
           {name}
         </span>
-        {showProject && title && (
-          <small className="ell" title={session.cwd}>
-            {projectName(session.cwd)}
-          </small>
-        )}
         {isStalled(session) && <StalledBadge />}
-      </span>
-      <span className="m">
-        {detail && <span className="ell">{detail}</span>}
-        {needsApprovalHint(session) && <em>Approved it? This updates when the command finishes.</em>}
-      </span>
-      <span className="ra-meta">
+      </div>
+      <div className="m ell" title={detail}>
+        {detail}
+      </div>
+      <div className="ra-meta">
         {ctx.showTool ? <ToolTag tool={tool} fallback={session.tool} /> : <span />}
-        <span className="host ell" title={session.host}>
+        <span className="host" title={session.host}>
           {session.host}
         </span>
-        <span
-          className={`time${hot ? ` hot${session.status === "error" ? " e" : ""}` : ""}`}
-          title={new Date(statusSince(session)).toLocaleString()}
-        >
-          {statusDuration(session, ctx.now)}
-        </span>
-      </span>
-      <span className="acts">
-        {openTarget && !ctx.remote && <OpenButton sessionKey={session.key} target={openTarget} />}
-        <DismissButton sessionKey={session.key} name={name} />
-      </span>
+        <TimeCell session={session} now={ctx.now} />
+      </div>
+      <Actions session={session} ctx={ctx} name={name} />
     </li>
+  );
+}
+
+/** A session that needs you but has no card here (a terminal prompt, a question we can't answer, an error). */
+function InboxRow({ session, ctx }: { session: Session; ctx: ViewContext }) {
+  const tool = ctx.toolById.get(session.tool);
+  const title = session.title?.trim() ? session.title : undefined;
+  const name = sessionName(session, true);
+  const detail = detailFor(session);
+  return (
+    <div
+      className={`ib-row st-${session.status}`}
+      style={{ "--tool": tool?.color ?? "var(--mu)" } as CSSProperties}
+    >
+      <StatusIcon status={session.status} />
+      <div className="t ell" title={title ? session.cwd : undefined}>
+        <span className={title ? undefined : "untitled"}>{name}</span>
+        {title && <small>{projectName(session.cwd)}</small>}
+      </div>
+      <div className="m ell" title={detail}>
+        {detail}
+        {needsApprovalHint(session) && (
+          <span className="hint">Approved it? This updates when the command finishes.</span>
+        )}
+      </div>
+      <div className="meta">
+        {ctx.showTool && <ToolTag tool={tool} fallback={session.tool} />}
+        <span className="host" title={session.host}>
+          {session.host}
+        </span>
+        <TimeCell session={session} now={ctx.now} />
+      </div>
+      <Actions session={session} ctx={ctx} name={name} />
+    </div>
   );
 }
 
@@ -131,7 +166,9 @@ function Inbox({
   return (
     <section className="inbox" aria-labelledby="inbox-title" aria-live="polite">
       <h2 id="inbox-title" className="sec-h">
-        Needs you <span className="n">{decisions.length + waiting.length}</span>
+        <span>Needs you</span>
+        <span className="n">{decisions.length + waiting.length}</span>
+        <span className="sp" />
       </h2>
       {/* Concurrent prompts are also shown in their host, so holding a prompt back does not apply to them. */}
       {anyBlocking(decisions) && (
@@ -142,19 +179,15 @@ function Inbox({
       )}
       {decisions.length > 0 && (
         <div className="ib-grid">
-          {shown.map((decision) => {
-            const session = sessionByKey.get(decision.sessionKey);
-            return (
-              <DecisionCard
-                key={decision.id}
-                decision={decision}
-                session={session}
-                tool={session ? ctx.toolById.get(session.tool) : undefined}
-                canAnswer={ctx.canAnswer}
-                now={ctx.now}
-              />
-            );
-          })}
+          {shown.map((decision) => (
+            <DecisionCard
+              key={decision.id}
+              decision={decision}
+              session={sessionByKey.get(decision.sessionKey)}
+              canAnswer={ctx.canAnswer}
+              now={ctx.now}
+            />
+          ))}
         </div>
       )}
       {decisions.length > INBOX_CAP && (
@@ -162,36 +195,31 @@ function Inbox({
           {showAll ? "Show fewer" : `Show all ${decisions.length} prompts`}
         </button>
       )}
-      {waiting.length > 0 && (
-        <ul className="ra-list ib-rows">
-          {waiting.map((session) => (
-            <SessionRow key={session.key} session={session} ctx={ctx} showProject />
-          ))}
-        </ul>
-      )}
+      {waiting.map((session) => (
+        <InboxRow key={session.key} session={session} ctx={ctx} />
+      ))}
     </section>
   );
 }
 
-const SUMMARY_PARTS = ["needs_input", "error", "working", "idle", "done"] as const;
-const SUMMARY_LABEL = {
-  needs_input: "waiting",
-  error: "stopped",
-  working: "working",
-  idle: "idle",
-  done: "done",
-} as const;
+const SUMMARY_PARTS = ["working", "idle", "done"] as const;
 
 /** Stays visible when the folder is collapsed, so it still says what's going on inside. */
-function ProjectSummary({ sessions }: { sessions: Session[] }) {
+function ProjectSummary({ sessions, above }: { sessions: Session[]; above: number }) {
   return (
     <span className="sum">
+      {above > 0 && (
+        <span style={{ color: "var(--need)" }} title={`${above} waiting for you, listed under "Needs you"`}>
+          <StatusIcon status="needs_input" decorative />
+          {above} above
+        </span>
+      )}
       {SUMMARY_PARTS.map((status) => {
         const n = sessions.filter((s) => s.status === status).length;
         return n > 0 ? (
-          <span key={status} title={`${n} ${SUMMARY_LABEL[status]}`}>
+          <span key={status} title={`${n} ${status}`}>
             <StatusIcon status={status} decorative />
-            {n} {SUMMARY_LABEL[status]}
+            {n}
           </span>
         ) : null;
       })}
@@ -201,11 +229,14 @@ function ProjectSummary({ sessions }: { sessions: Session[] }) {
 
 function ProjectGroup({
   project,
+  above,
   collapsed,
   onToggle,
   ctx,
 }: {
   project: Project;
+  /** Sessions of this folder that need you (listed under "Needs you", not here). */
+  above: number;
   collapsed: boolean;
   onToggle: () => void;
   ctx: ViewContext;
@@ -223,16 +254,28 @@ function ProjectGroup({
         <svg className="chev" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M6 4l4 4-4 4" />
         </svg>
-        <b className="gh-name ell">{project.name}</b>
-        <span className="path ell" title={project.cwd}>
-          {project.cwd}
+        <svg
+          className="folder"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="var(--fa)"
+          strokeWidth="1.4"
+          aria-hidden="true"
+        >
+          <path d="M1.75 4.25c0-.7.55-1.25 1.25-1.25h3.1l1.5 1.5H13c.7 0 1.25.55 1.25 1.25v6.5c0 .7-.55 1.25-1.25 1.25H3c-.7 0-1.25-.55-1.25-1.25z" />
+        </svg>
+        <b className="ell">{project.name}</b>
+        <span className="path" title={project.cwd}>
+          {shortenPath(project.cwd)}
         </span>
-        <ProjectSummary sessions={project.sessions} />
+        <ProjectSummary sessions={project.sessions} above={above} />
       </button>
       {!collapsed && (
         <ul className="ra-list" id={rowsId}>
           {project.sessions.map((session) => (
-            <SessionRow key={session.key} session={session} ctx={ctx} showProject={false} />
+            <SessionRow key={session.key} session={session} ctx={ctx} />
           ))}
         </ul>
       )}
@@ -245,6 +288,7 @@ export function ListView({
   waiting,
   sessionByKey,
   projects,
+  aboveByProject,
   collapsed,
   onToggleProject,
   ctx,
@@ -253,6 +297,7 @@ export function ListView({
   waiting: Session[];
   sessionByKey: Map<string, Session>;
   projects: Project[];
+  aboveByProject: Map<string, number>;
   collapsed: Set<string>;
   onToggleProject: (key: string) => void;
   ctx: ViewContext;
@@ -266,6 +311,7 @@ export function ListView({
         <ProjectGroup
           key={project.key}
           project={project}
+          above={aboveByProject.get(project.key) ?? 0}
           collapsed={collapsed.has(project.key)}
           onToggle={() => onToggleProject(project.key)}
           ctx={ctx}

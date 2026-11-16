@@ -154,3 +154,32 @@ export function withDecisions(sessions: Session[], decisions: readonly PendingDe
 export function anyBlocking(decisions: readonly PendingDecision[]): boolean {
   return decisions.some((d) => d.concurrent !== true);
 }
+
+const WINDOWS_HOME = /^[A-Za-z]:\\Users\\[^\\]+/;
+const POSIX_HOME = /^\/(Users|home)\/[^/]+/;
+
+/**
+ * A project folder short enough for a group header. The user's home is replaced with "~" when the path itself shows
+ * where it is (no OS lookup). A path still longer than maxLength keeps its first segment and last two, with the
+ * last one cut to fit. The full path belongs in a title attribute.
+ */
+export function shortenPath(path: string, maxLength = 48): string {
+  const home = WINDOWS_HOME.exec(path) ?? POSIX_HOME.exec(path);
+  const display = home ? `~${path.slice(home[0].length)}` : path;
+  if (display.length <= maxLength) return display;
+
+  const sep = display.includes("\\") ? "\\" : "/";
+  const parts = display.split(/[\\/]/).filter(Boolean);
+  if (parts.length <= 3) return display;
+
+  const root = display.startsWith("/") && !home ? "/" : "";
+  const first = `${root}${parts[0]}`;
+  const near = parts[parts.length - 2] ?? "";
+  const last = parts[parts.length - 1] ?? "";
+  const prefix = `${first}${sep}…${sep}${near}${sep}`;
+  if (prefix.length + last.length <= maxLength) return prefix + last;
+
+  const room = maxLength - prefix.length - 1;
+  // Too little room for a useful tail: keep the whole last segment and let CSS ellipsize the rest.
+  return room >= 6 ? `${prefix}${last.slice(0, room)}…` : `${first}${sep}…${sep}${last}`;
+}

@@ -106,24 +106,41 @@ export function GetNotifications() {
     }
   };
   return (
-    <div className="ntfy-banner">
-      <a className="primary-button remote-big" href={ntfy.link}>
-        Get notifications
-      </a>
-      <p className="remote-hint">
-        Opens the ntfy app and subscribes. Not installed yet?{" "}
-        <a href={NTFY_PLAY_URL} target="_blank" rel="noreferrer">
-          Google Play
-        </a>{" "}
-        ·{" "}
-        <a href={NTFY_APP_STORE_URL} target="_blank" rel="noreferrer">
-          App Store
-        </a>{" "}
-        ·{" "}
-        <button type="button" className="text-button" onClick={hide}>
-          Hide
-        </button>
+    <div className="banner">
+      <svg
+        viewBox="0 0 16 16"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3zM6.5 14h3" />
+      </svg>
+      <p>
+        <b>Get notifications</b> on this phone
+        <span className="sub">
+          Needs the ntfy app:{" "}
+          <a href={NTFY_PLAY_URL} target="_blank" rel="noreferrer">
+            Google Play
+          </a>{" "}
+          ·{" "}
+          <a href={NTFY_APP_STORE_URL} target="_blank" rel="noreferrer">
+            App Store
+          </a>
+        </span>
       </p>
+      <a className="btn sm pri" href={ntfy.link}>
+        Set up
+      </a>
+      <button type="button" className="btn sm ico ghost" aria-label="Hide this banner" onClick={hide}>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+        </svg>
+      </button>
     </div>
   );
 }
