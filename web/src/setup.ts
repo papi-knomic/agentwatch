@@ -14,6 +14,17 @@ export interface SetupTool {
   afterInstall: string[];
   /** Set when the tool's config can't be read (e.g. invalid JSON); connecting would fail. */
   error?: string;
+  /** Installed but out of date: connecting again updates it. */
+  outdated?: boolean;
+}
+
+/** Answering from the dashboard, for one remote-capable tool. "off" is a normal choice, not a problem. */
+export interface RemoteToolState {
+  id: string;
+  name: string;
+  connected: boolean;
+  answering: "on" | "off";
+  note?: string;
 }
 
 export interface Setup {
@@ -27,6 +38,7 @@ export interface Setup {
     enabled: boolean;
     installed: boolean;
     tools: string[];
+    perTool: RemoteToolState[];
     /** What terminal prompts do while the dashboard is only open in the background. */
     backgroundHold: BackgroundHold;
   };
@@ -87,14 +99,16 @@ export async function connectTool(
   return (await res.json()) as { results: ConnectResult[]; setup: Setup };
 }
 
-export async function setRemoteActions(
+/** Switches answering for one tool only; `dryRun` previews what would change. */
+export async function setToolRemoteActions(
+  tool: string,
   enabled: boolean,
   dryRun: boolean,
 ): Promise<{ results: ConnectResult[]; setup: Setup }> {
   const res = await fetch("/api/setup/remote-actions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ enabled, dryRun }),
+    body: JSON.stringify({ tool, enabled, dryRun }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: unknown };

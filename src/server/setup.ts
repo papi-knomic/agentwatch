@@ -18,9 +18,21 @@ export interface ToolSetup {
   afterInstall: string[];
   /** Set when the tool's config couldn't be read (e.g. invalid JSON); the tool can't be connected until fixed. */
   error?: string;
+  /** Something of ours is installed but out of date (the CLI moved, or an older version wrote it): connecting again updates it. */
+  outdated?: boolean;
 }
 
 /** Answering permission prompts and questions from the dashboard: opt-in, for tools that support it. */
+export interface RemoteToolState {
+  id: string;
+  name: string;
+  connected: boolean;
+  /** "on" = this tool's decide hook/plugin is installed. A tool left "off" on purpose is a normal state. */
+  answering: "on" | "off";
+  /** Why it can't be switched, or a hint (config unreadable, installed but out of date). */
+  note?: string;
+}
+
 export interface RemoteActionsState {
   supported: boolean;
   /** The config flag: the server accepts decisions. */
@@ -29,6 +41,8 @@ export interface RemoteActionsState {
   installed: boolean;
   /** Tools that have it, by display name. */
   tools: string[];
+  /** Every remote-capable tool, connected or not. */
+  perTool: RemoteToolState[];
   /** What blocking terminal prompts do while the dashboard is only open in the background. */
   backgroundHold: BackgroundHold;
 }
@@ -56,6 +70,15 @@ export interface SetupService {
   connect(tool: string, dryRun: boolean): Promise<{ results: ConnectResult[]; setup: SetupState }>;
   /** Turns remote actions on (adds the `decide` hooks and the config flag) or off (removes both). */
   setRemoteActions(
+    enabled: boolean,
+    dryRun: boolean,
+  ): Promise<{ results: ConnectResult[]; setup: SetupState }>;
+  /**
+   * Turns answering on or off for one tool only (additive, backed up, idempotent) and keeps the master flag in step:
+   * on while any tool still has it.
+   */
+  setToolRemoteActions(
+    tool: string,
     enabled: boolean,
     dryRun: boolean,
   ): Promise<{ results: ConnectResult[]; setup: SetupState }>;
@@ -111,22 +134,41 @@ export function createSetupService(deps: SetupDeps): SetupService {
     return used.length > 0 ? used : capable;
   };
 
-  async function remoteActionsState(): Promise<RemoteActionsState> {
+  /** The decide hook/plugin is installed: adding it would change nothing. */
+  const answeringOn = (a: Adapter) =>
+    a
+      .install({ ...optionsFor(a, true), remoteActions: true })
+      .then((r) => !r.changed)
+      .catch(() => false);
+
+  async function remoteActionsState(setups: ToolSetup[]): Promise<RemoteActionsState> {
     const tools = await remoteTools();
-    // Installed = adding the hooks would change nothing.
-    const previews = await Promise.all(
-      tools.map((a) =>
-        a
-          .install({ ...optionsFor(a, true), remoteActions: true })
-          .then((r) => !r.changed)
-          .catch(() => false),
-      ),
+    const capable = deps.adapters.filter((a) => a.meta.remoteActions && deps.decideCommandFor);
+    const previews = await Promise.all(tools.map(answeringOn));
+    const perTool = await Promise.all(
+      capable.map(async (a): Promise<RemoteToolState> => {
+        const setup = setups.find((t) => t.id === a.meta.id);
+        const on = await answeringOn(a);
+        const note = setup?.error
+          ? "Can't read its config"
+          : setup?.outdated
+            ? "Installed but out of date: connect it again to update"
+            : undefined;
+        return {
+          id: a.meta.id,
+          name: a.meta.displayName,
+          connected: setup?.connected ?? false,
+          answering: on ? "on" : "off",
+          ...(note ? { note } : {}),
+        };
+      }),
     );
     return {
       supported: tools.length > 0 && deps.saveRemoteActions !== undefined,
       enabled: deps.config.remoteActions === true,
       installed: previews.length > 0 && previews.every(Boolean),
       tools: tools.map((a) => a.meta.displayName),
+      perTool,
       backgroundHold: deps.config.remoteActionsBackgroundHold ?? DEFAULT_BACKGROUND_HOLD,
     };
   }
@@ -143,7 +185,20 @@ export function createSetupService(deps: SetupDeps): SetupService {
     };
     try {
       const preview = await adapter.install(optionsFor(adapter, true));
-      return { ...base, connected: !preview.changed, configPath: preview.configPath };
+      if (preview.changed) {
+        // Something of ours already there (an uninstall would remove it) means "installed but stale", not "absent".
+        const present = await adapter
+          .uninstall(optionsFor(adapter, true))
+          .then((r) => r.changed)
+          .catch(() => false);
+        return {
+          ...base,
+          connected: false,
+          configPath: preview.configPath,
+          ...(present ? { outdated: true } : {}),
+        };
+      }
+      return { ...base, connected: true, configPath: preview.configPath };
     } catch (error) {
       return {
         ...base,
@@ -156,12 +211,13 @@ export function createSetupService(deps: SetupDeps): SetupService {
 
   async function status(): Promise<SetupState> {
     const autostart = deps.autostartInstalled;
+    const tools = await Promise.all(deps.adapters.map(toolSetup));
     return {
       cli: APP_NAME,
       autostart: { supported: autostart !== undefined, installed: autostart ? await autostart() : false },
       notes: GENERAL_NOTES,
-      tools: await Promise.all(deps.adapters.map(toolSetup)),
-      remoteActions: await remoteActionsState(),
+      tools,
+      remoteActions: await remoteActionsState(tools),
     };
   }
 
@@ -208,6 +264,40 @@ export function createSetupService(deps: SetupDeps): SetupService {
     return { results, setup: await status() };
   }
 
+  async function setToolRemoteActions(tool: string, enabled: boolean, dryRun: boolean) {
+    const adapter = deps.adapters.find((a) => a.meta.id === tool);
+    if (!adapter) throw new UnknownToolError(`Unknown tool "${tool}"`);
+    if (!adapter.meta.remoteActions || !deps.decideCommandFor || !deps.saveRemoteActions)
+      throw new UnknownToolError(
+        `Answering from the dashboard isn't available for ${adapter.meta.displayName}`,
+      );
+    if (enabled) {
+      // Installing the decide entry writes the tool's whole hook set, so only for a tool the user already connected.
+      const current = await toolSetup(adapter);
+      if (!current.connected) throw new UnknownToolError(`Connect ${adapter.meta.displayName} first`);
+    }
+    const result = await adapter.install({ ...optionsFor(adapter, dryRun), remoteActions: enabled });
+    const results: ConnectResult[] = [
+      {
+        id: adapter.meta.id,
+        configPath: result.configPath,
+        changed: result.changed,
+        summary: result.summary,
+        ...(result.backupPath ? { backupPath: result.backupPath } : {}),
+        afterInstall: adapter.meta.afterInstall ?? [],
+      },
+    ];
+    if (!dryRun) {
+      // The flag is the master switch: on while any tool still answers (same rule as `install --tool`).
+      const others = deps.adapters.filter((a) => a !== adapter && a.meta.remoteActions);
+      const othersOn = (await Promise.all(others.map(answeringOn))).some(Boolean);
+      const flag = enabled || othersOn;
+      await deps.saveRemoteActions(flag);
+      deps.config.remoteActions = flag;
+    }
+    return { results, setup: await status() };
+  }
+
   async function setBackgroundHold(mode: BackgroundHold) {
     if (!deps.saveBackgroundHold) throw new UnknownToolError("This setting isn't available");
     await deps.saveBackgroundHold(mode);
@@ -215,5 +305,5 @@ export function createSetupService(deps: SetupDeps): SetupService {
     return status();
   }
 
-  return { status, connect, setRemoteActions, setBackgroundHold };
+  return { status, connect, setRemoteActions, setToolRemoteActions, setBackgroundHold };
 }

@@ -1572,3 +1572,63 @@
     height: 44px;
   }
 }
+
+/* ================= Answering tab: one row per tool ================= */
+.aw .answer-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.aw .answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.aw .answer-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.aw .answer-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.aw .answer-main .settings-text {
+  margin: 2px 0 0;
+}
+
+.aw .answer-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.aw .answer-name {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.aw .answer-note {
+  margin: 4px 0 0;
+  color: var(--mu);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 60ch;
+}
+
+.aw .answer-problem {
+  color: var(--err, var(--mu));
+}
+
+.aw .answer-detail {
+  flex-basis: 100%;
+}

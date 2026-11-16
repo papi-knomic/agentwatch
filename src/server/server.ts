@@ -591,9 +591,9 @@ export function createAppServer(options: AppServerOptions): Server {
         if (!sameOrigin) throw new HttpError(403, "Forbidden");
         if (!options.setup) throw new HttpError(404, "Not found");
         const body = await readJsonBody(req);
-        const { enabled, dryRun, backgroundHold } = (
+        const { enabled, dryRun, backgroundHold, tool } = (
           typeof body === "object" && body !== null ? body : {}
-        ) as { enabled?: unknown; dryRun?: unknown; backgroundHold?: unknown };
+        ) as { enabled?: unknown; dryRun?: unknown; backgroundHold?: unknown; tool?: unknown };
         if (backgroundHold !== undefined) {
           // The hold mode is the only thing this request changes when it is given; `enabled` is then not needed.
           if (!(BACKGROUND_HOLDS as readonly unknown[]).includes(backgroundHold)) {
@@ -608,7 +608,16 @@ export function createAppServer(options: AppServerOptions): Server {
           }
         }
         if (typeof enabled !== "boolean") throw new HttpError(400, "Missing enabled");
+        if (tool !== undefined && typeof tool !== "string") throw new HttpError(400, "Invalid tool");
         try {
+          // With a tool, only that tool's entry changes; without, the older all-connected-tools switch.
+          if (typeof tool === "string") {
+            return sendJson(
+              res,
+              200,
+              await options.setup.setToolRemoteActions(tool, enabled, dryRun === true),
+            );
+          }
           return sendJson(res, 200, await options.setup.setRemoteActions(enabled, dryRun === true));
         } catch (error) {
           if (error instanceof UnknownToolError) throw new HttpError(400, error.message);

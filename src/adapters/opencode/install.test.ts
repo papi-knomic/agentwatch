@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InstallOptions } from "../types.js";
 import { installOpenCode, openCodePluginPath, uninstallOpenCode } from "./install.js";
+import { PLUGIN_MARKER } from "./plugin.js";
 
 let home: string;
 let options: InstallOptions;
@@ -78,6 +79,30 @@ describe("OpenCode install", () => {
     const removed = await installOpenCode({ ...options, remoteActions: false });
     expect(removed.changed).toBe(true);
     expect(await readFile(openCodePluginPath(options), "utf8")).toContain("const DECIDE = null;");
+  });
+
+  it("finds the plugin in the real Windows-style layout and tells an older copy from a missing one", async () => {
+    // %USERPROFILE%\.config\opencode\plugins\agentwatch.js with unrelated env vars, as on the real machine.
+    const env = { APPDATA: join(home, "AppData", "Roaming"), USERPROFILE: home };
+    const real = { ...options, env };
+    const path = join(home, ".config", "opencode", "plugins", "agentwatch.js");
+    expect(openCodePluginPath(real)).toBe(path);
+
+    // A copy written by an older template: ours (marker), but not byte-equal to what this version generates.
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(
+      path,
+      `${PLUGIN_MARKER}
+// older template
+const HOOK = [];
+`,
+    );
+    const dry = { ...real, dryRun: true };
+    expect((await installOpenCode(dry)).changed).toBe(true);
+    expect((await uninstallOpenCode(dry)).changed).toBe(true);
+
+    await installOpenCode(real);
+    expect((await installOpenCode(dry)).changed).toBe(false);
   });
 
   it("a dry run writes nothing", async () => {

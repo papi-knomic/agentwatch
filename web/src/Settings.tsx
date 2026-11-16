@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
 import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
 import type { BackgroundHold } from "../../src/core/decision-types.js";
+import { answeringNeedsAttention } from "./answering";
 import type { Permission } from "./decisionAlerts";
+import { Pill, Switch } from "./PhoneParts";
 import { PhoneTab } from "./PhoneTab";
 import { SETTINGS_TABS, type SettingsTab, settingsHref } from "./route";
-import { AgentsSection, CopyCommand, RemoteActionsRow } from "./SetupPanel";
-import { getPhone, type PhoneSettings, type Setup, setBackgroundHold } from "./setup";
-
-function partlySetUp(setup: Setup): boolean {
-  return setup.remoteActions.supported && setup.remoteActions.enabled !== setup.remoteActions.installed;
-}
+import { AgentsSection, CopyCommand } from "./SetupPanel";
+import {
+  getPhone,
+  type PhoneSettings,
+  type RemoteToolState,
+  type Setup,
+  type SetupTool,
+  setBackgroundHold,
+  setToolRemoteActions,
+} from "./setup";
 
 /** What in setup needs a second look; drives the dot on the gear. */
 export function setupNeedsAttention(setup: Setup | null): boolean {
   if (!setup) return false;
-  return partlySetUp(setup) || setup.tools.some((tool) => tool.error !== undefined);
+  return answeringNeedsAttention(setup) || setup.tools.some((tool) => tool.error !== undefined);
 }
 
 interface SettingsProps {
@@ -51,8 +57,8 @@ export function SettingsPage({ tab, setup, onSetup, permission, onEnableAlerts }
               href={settingsHref(t.id)}
             >
               {t.label}
-              {t.id === "answering" && setup && partlySetUp(setup) && (
-                <span className="attn-dot" title="Partly set up" />
+              {t.id === "answering" && setup && answeringAttention(setup) && (
+                <span className="attn-dot" title="Needs a look" />
               )}
             </a>
           ))}
@@ -178,35 +184,165 @@ function NotificationsTab({
   );
 }
 
+/** The tab's dot: the same rule as the gear, plus a remote-capable tool whose config can't be read. */
+function answeringAttention(setup: Setup): boolean {
+  const capable = new Set(setup.remoteActions.perTool.map((tool) => tool.id));
+  return (
+    answeringNeedsAttention(setup) || setup.tools.some((t) => capable.has(t.id) && t.error !== undefined)
+  );
+}
+
+/** What each tool can answer, and what to know before turning it on. */
+const ANSWERING_INFO: Record<string, { what: string; warn?: string }> = {
+  "claude-code": { what: "Permissions, questions and plans." },
+  codex: {
+    what: "Permissions only.",
+    warn: "Leave off if you use Codex's auto reviewer: it would delay auto-approved requests.",
+  },
+  opencode: { what: "Permissions, and questions on 1.x. Restart OpenCode after changing." },
+};
+
 function AnsweringTab({ setup, onSetup }: { setup: Setup | null; onSetup: (setup: Setup) => void }) {
   return (
-    <section className="settings-card">
-      <h2>Answer prompts from the dashboard</h2>
-      <p className="settings-text">
-        Approve or deny permission requests and answer questions on this page instead of in the terminal. It
-        works for Claude Code (permissions, questions and plans), Codex (permissions only, not with Codex's
-        auto reviewer: the hook would delay auto-approved requests, so leave Codex answering off if you use
-        it) and OpenCode (permissions, and questions on 1.x), and is off by default.
-      </p>
-      <ul className="settings-list">
-        <li>
-          While a dashboard tab is visible, the agent waits up to about 100 seconds for your answer here.
-        </li>
-        <li>
-          If the tab is hidden or covered, what happens is your choice below (browser alerts, if enabled,
-          still tell you a prompt is waiting).
-        </li>
-        <li>With no dashboard tab open, it never waits: the terminal asks as usual.</li>
-      </ul>
-      {setup?.remoteActions.supported ? (
-        <>
-          <RemoteActionsRow remote={setup.remoteActions} onSetup={onSetup} />
+    <>
+      <section className="settings-card">
+        <h2>Answer prompts from the dashboard</h2>
+        <p className="settings-text">
+          Approve or deny permission requests and answer questions on this page instead of in the terminal.
+          Off by default, and switched on per tool.
+        </p>
+        <ul className="settings-list">
+          <li>
+            While a dashboard tab is visible, the agent waits up to about 100 seconds for your answer here.
+          </li>
+          <li>With no dashboard tab open, it never waits: the terminal asks as usual.</li>
+        </ul>
+        {setup?.remoteActions.supported ? (
+          <ul className="answer-list">
+            {setup.remoteActions.perTool.map((state) => (
+              <AnswerRow
+                key={state.id}
+                state={state}
+                tool={setup.tools.find((t) => t.id === state.id)}
+                onSetup={onSetup}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="settings-text settings-muted">Not available on this server.</p>
+        )}
+      </section>
+      {setup?.remoteActions.supported && (
+        <section className="settings-card">
+          <h2>Terminal prompts</h2>
           <BackgroundHoldChoice current={setup.remoteActions.backgroundHold} onSetup={onSetup} />
-        </>
-      ) : (
-        <p className="settings-text settings-muted">Not available on this server.</p>
+        </section>
       )}
-    </section>
+    </>
+  );
+}
+
+type AnswerStep =
+  | { kind: "idle" }
+  | { kind: "busy" }
+  | { kind: "preview"; to: boolean; configPath: string; summary: string[] }
+  | { kind: "error"; message: string };
+
+function AnswerRow({
+  state,
+  tool,
+  onSetup,
+}: {
+  state: RemoteToolState;
+  tool: SetupTool | undefined;
+  onSetup: (setup: Setup) => void;
+}) {
+  const [step, setStep] = useState<AnswerStep>({ kind: "idle" });
+  const on = state.answering === "on";
+  const info = ANSWERING_INFO[state.id];
+  const usable = state.connected || on;
+
+  // A dry run first, so the exact change is on screen before any config is written.
+  const run = async (to: boolean, dryRun: boolean) => {
+    setStep({ kind: "busy" });
+    try {
+      const { results, setup } = await setToolRemoteActions(state.id, to, dryRun);
+      const result = results[0];
+      if (!result) throw new Error("No result");
+      onSetup(setup);
+      setStep(
+        dryRun && result.changed
+          ? { kind: "preview", to, configPath: result.configPath, summary: result.summary }
+          : { kind: "idle" },
+      );
+    } catch (error) {
+      setStep({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  return (
+    <li className="answer-row">
+      <div className="answer-main">
+        <div className="answer-title">
+          <span className="answer-name">{state.name}</span>
+          {usable ? (
+            <Pill on={on}>{on ? "On" : "Off"}</Pill>
+          ) : (
+            <span className="pill pill-off">Not connected</span>
+          )}
+        </div>
+        <p className="settings-text">{info?.what}</p>
+        {info?.warn && <p className="answer-note">{info.warn}</p>}
+        {state.note && !tool?.error && <p className="answer-note">{state.note}</p>}
+        {tool?.error && <p className="answer-note answer-problem">{tool.error}</p>}
+        {!usable && (
+          <p className="answer-note">
+            <a href={settingsHref("agents")}>Connect it first</a>
+            {tool?.outdated ? " (an older copy is installed)" : ""}
+          </p>
+        )}
+      </div>
+      {usable && (
+        <Switch
+          checked={on}
+          label={`Answer ${state.name} prompts from the dashboard`}
+          disabled={step.kind === "busy" || step.kind === "preview"}
+          onChange={(next) => void run(next, true)}
+        />
+      )}
+      {step.kind === "preview" && (
+        <div className="setup-detail answer-detail">
+          <p>
+            This {step.to ? "adds" : "removes"} the answering entry in <code>{step.configPath}</code>. A
+            backup is saved first.
+          </p>
+          <ul className="setup-changes">
+            {step.summary.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {step.to && (
+            <p>
+              Any program on this computer can approve commands through this page, so don't turn this on on a
+              shared computer. The command shown here stays in memory only.
+            </p>
+          )}
+          <div className="setup-buttons">
+            <button type="button" className="btn pri" onClick={() => void run(step.to, false)}>
+              {step.to ? "Turn on" : "Turn off"}
+            </button>
+            <button type="button" className="btn sm" onClick={() => setStep({ kind: "idle" })}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {step.kind === "error" && (
+        <div className="setup-detail setup-error answer-detail">
+          <p>{step.message}</p>
+        </div>
+      )}
+    </li>
   );
 }
 
