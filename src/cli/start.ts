@@ -11,6 +11,7 @@ import { DeviceStore } from "../server/devices.js";
 import { createNotificationDispatcher } from "../server/notifications.js";
 import { createSessionOpener } from "../server/open-session.js";
 import { defaultListChildren } from "../server/process-list.js";
+import { createServeController } from "../server/serve.js";
 import { createAppServer } from "../server/server.js";
 import { createSessionHealth } from "../server/session-health.js";
 import { detectTailscaleHost } from "../server/tailscale.js";
@@ -90,6 +91,7 @@ export async function start(options: {
   const server = createAppServer({
     devices,
     detectHost: detectTailscaleHost,
+    serve: createServeController(),
     // Only `remote` is written, from the file's current content, so other keys edited meanwhile survive.
     saveRemote: async (remote) => {
       if (!(await setRemoteConfig(remote))) throw new Error(NO_CONFIG_FILE);

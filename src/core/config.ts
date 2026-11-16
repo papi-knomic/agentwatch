@@ -25,6 +25,8 @@ export interface RemoteConfig {
   enabled: boolean;
   /** Bare, lowercase hostnames such as mybox.tail1234.ts.net (no scheme, port or path). */
   hosts: string[];
+  /** Set when AgentWatch itself ran `tailscale serve` for the user, so it may later turn off that one mapping. */
+  serve?: { managed: true; https: 443 };
 }
 
 const HOSTNAME_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -50,7 +52,12 @@ export function parseRemote(value: unknown): RemoteConfig {
         MAX_REMOTE_HOSTS,
       )
     : [];
-  return { enabled: bool(value.enabled, false) && hosts.length > 0, hosts };
+  const managed = isRecord(value.serve) && value.serve.managed === true;
+  return {
+    enabled: bool(value.enabled, false) && hosts.length > 0,
+    hosts,
+    ...(managed ? { serve: { managed: true as const, https: 443 as const } } : {}),
+  };
 }
 
 export interface Config {

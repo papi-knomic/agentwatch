@@ -57,7 +57,9 @@ export function PhoneNotifications() {
     }
   };
 
+  // ntfy:// opens the app and subscribes (documented for Android; iOS handling is unverified), unlike https links.
   const subscribeUrl = phone.topic ? `${phone.server.replace(/\/+$/, "")}/${phone.topic}` : "";
+  const appLink = subscribeUrl ? `ntfy://${subscribeUrl.replace(/^https?:\/\//, "")}` : "";
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(phone.topic);
@@ -109,8 +111,8 @@ export function PhoneNotifications() {
           </p>
           {subscribeUrl && (
             <div className="pair-box">
-              <QrCode text={subscribeUrl} label="QR code to subscribe to the ntfy topic" />
-              <p>Scan with your phone's camera to open the topic in the ntfy app.</p>
+              <QrCode text={appLink} label="QR code to subscribe to the ntfy topic" />
+              <p>Scan with your phone's camera to open the topic in the ntfy app (install it first).</p>
             </div>
           )}
           <p>

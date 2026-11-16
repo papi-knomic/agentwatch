@@ -48,7 +48,8 @@ Endpoints: `GET /api/health`, `GET /api/state`, `GET /api/stream` (SSE: `snapsho
 `POST /api/events` (needs the token), `POST /api/sessions/dismiss` (dashboard's own origin or the token).
 Opt-in remote mode (phone via Tailscale Serve, `config.remote`) adds `GET /api/me`, `POST /api/pair` (remote hosts only),
 `POST /api/devices/pair-code`, `GET /api/devices`, `POST|DELETE /api/devices/:id`, `GET|POST /api/setup/remote` and
-`POST /api/setup/remote/detect` (loopback dashboard only). Code: `src/server/devices.ts`, `src/server/tailscale.ts`.
+`POST /api/setup/remote/detect`, `GET|POST /api/setup/remote/serve` (`{action:"on"|"off"}`, runs Tailscale Serve, see rule 2)
+(loopback dashboard only), and `GET /api/me/ntfy` (paired device or loopback). Code: `src/server/serve.ts`. Code: `src/server/devices.ts`, `src/server/tailscale.ts`.
 Opt-in remote actions add `POST /api/decisions` and `GET /api/decisions/:id/wait` (token), `POST /api/decisions/:id/resolve`
 and `POST /api/setup/remote-actions` (dashboard's own origin only); see Known limitations.
 
@@ -96,7 +97,12 @@ same change.
    outbound requests are to a notification server the user explicitly configured (phone notifications, off by default).
    No auto-update calls. The only remote access is through a user-run HTTPS proxy such as
    Tailscale Serve, forwarding to `127.0.0.1`, for the hosts listed in `config.remote.hosts`. Never document or support
-   Tailscale Funnel or any public exposure. The only process we spawn for it is the local `tailscale status --json`.
+   Tailscale Funnel or any public exposure. The only processes we spawn for it are exactly these Tailscale CLI calls
+   (resolved absolute path, no shell, short timeouts): `tailscale status --json`, `tailscale serve status --json`, and,
+   only on an explicit click in the dashboard's "Set up phone" panel (loopback, dashboard Origin),
+   `tailscale serve --bg --yes --https=443 http://127.0.0.1:<port>` and `tailscale serve --https=443 off`. Never
+   `serve reset`, never `funnel`. Never overwrite a `:443` mapping that isn't ours, and only turn off a mapping
+   AgentWatch created (`config.remote.serve.managed`) that still points at our port.
 3. **Treat localhost as unsafe.** Any website open in the user's browser can send requests to localhost. Require the token stored in
    the user config on every write request, check the `Host` header (blocks DNS rebinding), and check `Origin`
    on browser requests (including reads of `/api/*` other than `/api/health`). Limit: an `Origin` check keeps other
@@ -117,7 +123,10 @@ same change.
    Third, only with `phone.enabled`: a phone notification (ntfy) is generic by default (tool name plus "Needs your
    input" / "Finished" / "Error"). Only with the user's `phone.includeDetails` may it add the project folder's base name,
    the task title and the agent's short message. Never full paths, prompts, transcripts or command previews. The topic
-   and access token are secrets: never logged, never sent back to the browser.
+   and access token are secrets: never logged, never sent back to the browser. Exception: a paired device (valid cookie)
+   or the loopback dashboard may read the topic from `GET /api/me/ntfy` (as an `ntfy://` link) so one tap subscribes the
+   ntfy app, only while `phone.enabled`. The access token is never returned there, and the topic is never in
+   `/api/state` or SSE.
 5. **Don't damage the user's config.** Installers that edit `~/.claude/settings.json`, `~/.codex/config.toml`,
    `~/.grok/hooks/`, etc. must: add to what's there and never overwrite it, back it up first, be safe to run twice, support `--dry-run`,
    and have an `uninstall` that removes exactly what was added.
@@ -237,7 +246,12 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   captures. Grok hooks can only deny, so Grok is unsupported; Codex `PermissionRequest` has the same format and
   OpenCode has an HTTP permission API (future work). Hooks can't send new prompts or start plans; only Claude Code
   Channels (a research preview) could, and that is out of scope.
-- Remote mode: whether Tailscale Serve forwards `Host` as `<machine>.<tailnet>.ts.net` and the exact `tailscale serve` flags are
+- Remote mode: the "Set up phone" wizard runs `tailscale serve` itself (`src/server/serve.ts`, tested with an injected fake
+  CLI only). Unverified: what the CLI prints when HTTPS isn't enabled for the tailnet (we only match a
+  `https://login.tailscale.com/` URL in its output and kill the process), and whether `ntfy://` opens the ntfy app on iOS
+  (documented for Android). The `serve status --json` shape follows Tailscale's `ipn.ServeConfig`
+  (github.com/tailscale/tailscale/blob/main/ipn/serve.go) and is parsed defensively; unknown shapes count as "in use".
+  Whether Tailscale Serve forwards `Host` as `<machine>.<tailnet>.ts.net` and the exact `tailscale serve` flags are
   unverified (covered only by simulated-proxy tests). The loopback `Origin` check is still forgeable by local processes. A phone without
   "Allow approvals" doesn't count as a viewer, so it doesn't hold prompts back from the terminal. Failed pairing attempts
   are rate-limited globally (10 per minute; successes don't count, and a new code from the PC dashboard resets it), so a
