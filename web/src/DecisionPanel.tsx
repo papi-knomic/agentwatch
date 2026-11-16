@@ -4,6 +4,7 @@ import {
   type DecisionQuestion,
   PLAN_FEEDBACK_MAX,
 } from "../../src/core/decision-types.js";
+import { settingsHref } from "./route";
 import { type PendingDecision, type ResolveOutcome, resolveDecision } from "./useAgentStream";
 
 type Phase = "idle" | "sending" | ResolveOutcome;
@@ -23,6 +24,22 @@ const HOLD_TEXT: Record<BackgroundHold, string> = {
     "While this tab is visible it waits up to about 100 seconds; if the tab is hidden it waits about 15 seconds.",
   off: "It waits up to about 100 seconds while this tab is visible; if the tab is hidden, the terminal prompt appears within a couple of seconds.",
 };
+
+/** The long explanation of a held-back terminal prompt, behind a small "?" so cards stay one line. */
+export function HoldInfo({ hold }: { hold: BackgroundHold }) {
+  return (
+    <details className="hold-info">
+      <summary aria-label="Why isn't it in the terminal?" title="Why isn't it in the terminal?">
+        ?
+      </summary>
+      <span className="hold-text">
+        Claude Code is waiting for this answer and is not showing it in the terminal meanwhile.{" "}
+        {HOLD_TEXT[hold]} Closing all dashboard tabs hands the prompt back to the terminal within about 5
+        seconds. <a href={settingsHref("answering")}>Change in Settings</a>
+      </span>
+    </details>
+  );
+}
 
 const OUTCOME_NOTE: Partial<Record<Phase, string>> = {
   answered: "Already answered.",
@@ -81,7 +98,7 @@ export function DecisionPanel({
               <div className="decision-buttons">
                 <button
                   type="button"
-                  className="primary-button"
+                  className="btn pri"
                   disabled={sending || over}
                   onClick={() => void send({ behavior: "allow" })}
                 >
@@ -89,7 +106,7 @@ export function DecisionPanel({
                 </button>
                 <button
                   type="button"
-                  className="deny-button"
+                  className="btn dng"
                   disabled={sending || over}
                   onClick={() =>
                     void send(
@@ -113,7 +130,7 @@ export function DecisionPanel({
             <div className="decision-buttons">
               <button
                 type="button"
-                className="primary-button"
+                className="btn pri"
                 disabled={sending || over}
                 onClick={() => void send({ behavior: "allow" })}
               >
@@ -121,7 +138,7 @@ export function DecisionPanel({
               </button>
               <button
                 type="button"
-                className="deny-button"
+                className="btn dng"
                 disabled={sending || over}
                 onClick={() => void send({ behavior: "deny" })}
               >
@@ -148,15 +165,13 @@ export function DecisionPanel({
       )}
       {canAnswer && !over && decision.concurrent === true && (
         <p className="decision-note">
-          Also showing in {concurrentPlace(host, decision.sessionKey)}. Answer here or there; whichever is
-          first counts.
+          Also in {concurrentPlace(host, decision.sessionKey)}. Answer here or there.
         </p>
       )}
       {canAnswer && !over && decision.concurrent !== true && (
         <p className="decision-note">
-          Claude Code is waiting for this answer and is not showing it in the terminal meanwhile.{" "}
-          {HOLD_TEXT[decision.backgroundHold ?? "full"]} Closing all dashboard tabs hands the prompt back to
-          the terminal within about 5 seconds.
+          Not in the terminal until you answer.
+          <HoldInfo hold={decision.backgroundHold ?? "full"} />
         </p>
       )}
     </fieldset>
@@ -231,7 +246,7 @@ function QuestionForm({
       ))}
       {!hideSubmit && (
         <div className="decision-buttons">
-          <button type="button" className="primary-button" disabled={disabled || !complete} onClick={submit}>
+          <button type="button" className="btn pri" disabled={disabled || !complete} onClick={submit}>
             Submit
           </button>
         </div>

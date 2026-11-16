@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
 import type { BackgroundHold } from "../../src/core/decision-types.js";
+import type { Permission } from "./decisionAlerts";
 import { PhoneNotifications } from "./PhoneSettings";
 import { PhoneWizard } from "./PhoneWizard";
 import { RemoteAccess } from "./RemoteAccess";
 import { SETTINGS_TABS, type SettingsTab, settingsHref } from "./route";
 import { AgentsSection, CopyCommand, RemoteActionsRow } from "./SetupPanel";
 import { getPhone, type PhoneSettings, type Setup, setBackgroundHold } from "./setup";
-import type { Permission } from "./WaitingPanel";
 
 function partlySetUp(setup: Setup): boolean {
   return setup.remoteActions.supported && setup.remoteActions.enabled !== setup.remoteActions.installed;

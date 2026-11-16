@@ -1,94 +1,43 @@
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { APP_DISPLAY_NAME, APP_NAME } from "../../src/core/constants.js";
 import {
-  type AgentCount,
   agentsInUse,
   groupByProject,
   isFinished,
-  isStalled,
   matchesAgent,
-  needsApprovalHint,
   needsYou,
-  type Project,
   projectName,
-  type Status,
   sortByUrgency,
-  statusDuration,
-  statusSince,
 } from "./board";
+import { useDecisionAlerts } from "./decisionAlerts";
+import { ListView, type ViewContext } from "./ListView";
 import { GetNotifications, NotPaired, PairPage } from "./PairPage";
+import { StatusIcon } from "./parts";
 import { type Me, pairCodeFromHash, useMe, useUnpairedWatch } from "./remote";
 import { type SettingsTab, settingsHref, useRoute } from "./route";
 import { SettingsPage, setupNeedsAttention } from "./Settings";
 import { useSetup } from "./setup";
+import { useCollapsedProjects, useStoredFlag, useStoredString } from "./storage";
+import { SidePanel, TableView } from "./TableView";
+import { Toolbar } from "./Toolbar";
+import { type Connection, type PendingDecision, useAgentStream } from "./useAgentStream";
+import { useNow } from "./useNow";
 import {
-  type Connection,
-  dismissSession,
-  openSession,
-  type Session,
-  type ToolInfo,
-  useAgentStream,
-} from "./useAgentStream";
-import { useDecisionAlerts, WaitingPanel } from "./WaitingPanel";
-
-const STATUS_LABEL: Record<Status, string> = {
-  needs_input: "Needs input",
-  error: "Error",
-  done: "Done",
-  working: "Working",
-  idle: "Idle",
-};
-
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
-
-/** A per-browser preference; falls back to the default when storage is unavailable. */
-function useStoredFlag(key: string, fallback: boolean): [boolean, (value: boolean) => void] {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored === null ? fallback : stored === "true";
-    } catch {
-      return fallback;
-    }
-  });
-  const update = (next: boolean) => {
-    setValue(next);
-    try {
-      localStorage.setItem(key, String(next));
-    } catch {
-      // Only a convenience.
-    }
-  };
-  return [value, update];
-}
-
-/** Like useStoredFlag, for an optional string; null removes it. */
-function useStoredString(key: string): [string | null, (value: string | null) => void] {
-  const [value, setValue] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  });
-  const update = (next: string | null) => {
-    setValue(next);
-    try {
-      if (next === null) localStorage.removeItem(key);
-      else localStorage.setItem(key, next);
-    } catch {
-      // Only a convenience.
-    }
-  };
-  return [value, update];
-}
+  compareSessions,
+  DEFAULT_SORT,
+  firstDirection,
+  matchesQuery,
+  matchesStatus,
+  nextSort,
+  parseView,
+  type Sort,
+  type SortKey,
+  type StatusFilter,
+  sortSessions,
+  statusCounts,
+  type ViewMode,
+  withDecisions,
+} from "./view";
 
 /** Decides what to show: the dashboard, the pairing form (phone, after scanning the QR code) or "not paired". */
 export function App() {
@@ -102,7 +51,9 @@ export function App() {
 }
 
 function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
-  const { sessions, tools, connection, decisions } = useAgentStream();
+  const { sessions: streamed, tools, connection, decisions } = useAgentStream();
+  // A session with a prompt waiting here needs you, whatever its last hook said; everything below sees that.
+  const sessions = useMemo(() => withDecisions(streamed, decisions), [streamed, decisions]);
   // A paired phone can't see or change setup (the server refuses it); it also can't open apps on the PC.
   const remote = me.remote;
   const { setup, replace: replaceSetup } = useSetup(!remote);
@@ -110,27 +61,51 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
   useUnpairedWatch(remote && connection === "reconnecting", onUnpaired);
   // Older servers have no setup endpoint; the plain empty state covers that.
   const readySetup = setup !== null && setup !== "unavailable" ? setup : null;
+
   const [hideFinished, setHideFinished] = useStoredFlag("hide-finished", false);
+  const [groupTable, setGroupTable] = useStoredFlag("table-group", false);
   const [collapsedProjects, toggleProject] = useCollapsedProjects();
   const [storedAgent, setAgent] = useStoredString("agent-filter");
+  const [storedView, setStoredView] = useStoredString("view");
+  const view: ViewMode = parseView(storedView);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
+  const [picked, setPicked] = useState<{ key: string; opener: HTMLElement | null } | null>(null);
   const now = useNow(15_000);
+  const second = useNow(1000);
 
   const toolById = useMemo(() => new Map(tools.map((t) => [t.id, t])), [tools]);
+  const toolLabel = (tool: string) => toolById.get(tool)?.label ?? tool;
   const agents = agentsInUse(sessions, tools);
   // A remembered filter for an agent with nothing on the board shows everything.
   const agent = agents.some((a) => a.id === storedAgent) ? storedAgent : null;
-  const visible = sessions.filter((s) => matchesAgent(s, agent));
+  const sessionByKey = useMemo(() => new Map(sessions.map((s) => [s.key, s])), [sessions]);
+
   // The top bar and the tab title count every agent: a filter must never hide that something needs you.
   const allAttention = sessions.filter(needsYou).length;
-  const attention = sortByUrgency(visible.filter(needsYou));
-  const hiddenAttention = allAttention - attention.length;
-  const finished = visible.filter(isFinished);
-  const projects = groupByProject(visible.filter((s) => !needsYou(s) && !(hideFinished && isFinished(s))));
-  // A tag that says the same thing on every row is noise.
-  const showTool = agents.length > 1;
-  const count = (status: Status) => sessions.filter((s) => s.status === status).length;
+  const working = sessions.filter((s) => s.status === "working").length;
+  const finishedAll = sessions.filter(isFinished).length;
 
-  const sessionByKey = useMemo(() => new Map(sessions.map((s) => [s.key, s])), [sessions]);
+  const base = sessions.filter(
+    (s) => matchesAgent(s, agent) && matchesQuery(s, query, toolById.get(s.tool)?.label),
+  );
+  const counts = statusCounts(base);
+  const filtered = base.filter((s) => matchesStatus(s, status) && !(hideFinished && isFinished(s)));
+  const hiddenFinished = hideFinished ? base.filter(isFinished).length : 0;
+  const filtersActive = query.trim() !== "" || agent !== null || status !== "all";
+  const clearFilters = () => {
+    setQuery("");
+    setAgent(null);
+    setStatus("all");
+  };
+
+  const decisionsBySession = useMemo(() => {
+    const map = new Map<string, PendingDecision[]>();
+    for (const d of decisions) map.set(d.sessionKey, [...(map.get(d.sessionKey) ?? []), d]);
+    return map;
+  }, [decisions]);
+
   const alerts = useDecisionAlerts(decisions, allAttention, (decision) => {
     const session = sessionByKey.get(decision.sessionKey);
     return {
@@ -144,38 +119,46 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
     if (connection === "live" && storedAgent !== null && agent === null) setAgent(null);
   }, [connection, storedAgent, agent, setAgent]);
 
+  // The panel belongs to a session: when it ends or is dismissed, the panel goes with it.
+  const pickedSession = picked ? sessionByKey.get(picked.key) : undefined;
+  useEffect(() => {
+    if (picked && !pickedSession && connection === "live") setPicked(null);
+  }, [picked, pickedSession, connection]);
+
   const needsSetupAttention = setupNeedsAttention(readySetup);
   const canAnswer = !me.remote || me.device.allowApprovals;
-  const rowProps = { toolById, showTool, now, remote };
+  const ctx: ViewContext = { toolById, showTool: agents.length > 1, now, remote, canAnswer };
+  const onSortColumn = (key: SortKey) => setSort((current) => nextSort(current, key));
+
+  // List view: cards for what can be answered here, one-line rows for the rest of what needs you, then folders.
+  const cardKeys = new Set(decisions.map((d) => d.sessionKey));
+  const waitingRows = sortByUrgency(sessions.filter((s) => needsYou(s) && !cardKeys.has(s.key)));
+  const projects = groupByProject(filtered.filter((s) => !needsYou(s) && !cardKeys.has(s.key)));
+
+  // Table view: every filtered row, sorted; needs-you rows lead by default.
+  const tableRows = sortSessions(filtered, sort, (s) => toolLabel(s.tool));
+  const tableProjects = groupTable
+    ? groupByProject(tableRows, (a, b) => compareSessions(a, b, sort, (s) => toolLabel(s.tool)))
+    : null;
+  const hiddenAttention = allAttention - filtered.filter(needsYou).length;
+  const noMatches =
+    view === "list" ? projects.length + waitingRows.length + decisions.length === 0 : tableRows.length === 0;
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="topbar-inner">
+      <header className="top">
+        <div className="top-in">
           <div className="brand">
             <Logo />
             <span>{APP_DISPLAY_NAME}</span>
           </div>
-          <div className="counts">
-            <Count tone="attention" value={allAttention} label="need you" />
-            <Count tone="working" value={count("working")} label="working" />
-            <Count tone="done" value={sessions.filter(isFinished).length} label="done" />
-          </div>
-          {finished.length > 0 && (
-            <button
-              type="button"
-              className={hideFinished ? "toggle on" : "toggle"}
-              aria-pressed={hideFinished}
-              onClick={() => setHideFinished(!hideFinished)}
-            >
-              Hide finished
-            </button>
-          )}
+          <Counts attention={allAttention} working={working} done={finishedAll} className="counts" />
+          <span className="sp" />
           <ConnectionBadge connection={connection} />
           {/* Setup is loopback-only on the server, so a paired phone gets no gear. */}
           {!remote && (
             <a
-              className={`gear${route.page === "settings" ? " on" : ""}`}
+              className={`gear btn ico ghost${route.page === "settings" ? " on" : ""}`}
               href={route.page === "settings" ? "#/" : settingsHref()}
               aria-label={needsSetupAttention ? "Settings (needs attention)" : "Settings"}
               title="Settings"
@@ -184,20 +167,15 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
                 <path d="M6.48 3.03L6.8 1.2H9.2L9.52 3.03A5.2 5.2 0 0 1 10.44 3.41L11.96 2.35L13.65 4.04L12.59 5.56A5.2 5.2 0 0 1 12.97 6.48L14.8 6.8V9.2L12.97 9.52A5.2 5.2 0 0 1 12.59 10.44L13.65 11.96L11.96 13.65L10.44 12.59A5.2 5.2 0 0 1 9.52 12.97L9.2 14.8H6.8L6.48 12.97A5.2 5.2 0 0 1 5.56 12.59L4.04 13.65L2.35 11.96L3.41 10.44A5.2 5.2 0 0 1 3.03 9.52L1.2 9.2V6.8L3.03 6.48A5.2 5.2 0 0 1 3.41 5.56L2.35 4.04L4.04 2.35L5.56 3.41A5.2 5.2 0 0 1 6.48 3.03Z" />
                 <circle cx="8" cy="8" r="2.25" />
               </svg>
-              {needsSetupAttention && <span className="attn-dot" />}
+              {needsSetupAttention && <span className="dot" />}
             </a>
           )}
         </div>
       </header>
-
-      <WaitingPanel
-        decisions={decisions}
-        sessions={sessions}
-        toolById={toolById}
-        canAnswer={canAnswer}
-        permission={alerts.permission}
-        onEnableAlerts={alerts.enable}
-      />
+      {/* On a phone the counts get their own row under the header. */}
+      <div className="pcounts-wrap">
+        <Counts attention={allAttention} working={working} done={finishedAll} className="pcounts" />
+      </div>
 
       <main className="content">
         {!remote && route.page === "settings" ? (
@@ -219,50 +197,80 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
               )
             ) : (
               <>
-                {agents.length > 1 && (
-                  <AgentFilter agents={agents} total={sessions.length} selected={agent} onSelect={setAgent} />
-                )}
+                <Toolbar
+                  query={query}
+                  onQuery={setQuery}
+                  agents={agents}
+                  totalSessions={sessions.length}
+                  agent={agent}
+                  onAgent={setAgent}
+                  status={status}
+                  onStatus={setStatus}
+                  statusCounts={counts}
+                  hasFinished={finishedAll > 0}
+                  hideFinished={hideFinished}
+                  onHideFinished={setHideFinished}
+                  view={view}
+                  onView={setStoredView}
+                  groupTable={groupTable}
+                  onGroupTable={setGroupTable}
+                  sortKey={sort.key}
+                  onSortKey={(key) => setSort({ key, dir: firstDirection(key) })}
+                  permission={alerts.permission}
+                  onEnableAlerts={alerts.enable}
+                />
 
-                {hiddenAttention > 0 && (
+                {view === "table" && hiddenAttention > 0 && (
                   <p className="filter-note">
                     {hiddenAttention === 1
-                      ? "1 session from another agent needs you"
-                      : `${hiddenAttention} sessions from other agents need you`}{" "}
-                    ·{" "}
-                    <button type="button" className="text-button" onClick={() => setAgent(null)}>
+                      ? "1 session that needs you is hidden by the filters"
+                      : `${hiddenAttention} sessions that need you are hidden by the filters`}{" "}
+                    <button type="button" className="link" onClick={clearFilters}>
                       Show all
                     </button>
                   </p>
                 )}
 
-                {attention.length > 0 && (
-                  <section className="lane" aria-labelledby="lane-title">
-                    <h2 id="lane-title" className="lane-head">
-                      Needs you <span className="lane-count">{attention.length}</span>
-                    </h2>
-                    <ul className="rows">
-                      {attention.map((session) => (
-                        <SessionRow key={session.key} session={session} showProject {...rowProps} />
-                      ))}
-                    </ul>
-                  </section>
+                {view === "list" ? (
+                  <ListView
+                    decisions={decisions}
+                    waiting={waitingRows}
+                    sessionByKey={sessionByKey}
+                    projects={projects}
+                    collapsed={collapsedProjects}
+                    onToggleProject={toggleProject}
+                    ctx={{ ...ctx, now: second }}
+                  />
+                ) : (
+                  tableRows.length > 0 && (
+                    <TableView
+                      sessions={tableRows}
+                      projects={tableProjects}
+                      sort={sort}
+                      onSort={onSortColumn}
+                      decisionsBySession={decisionsBySession}
+                      pickedKey={picked?.key ?? null}
+                      onPick={(key, opener) => setPicked({ key, opener })}
+                      ctx={ctx}
+                    />
+                  )
                 )}
 
-                {/* Sessions that need you are in the lane above, so collapsing a folder never hides them. */}
-                {projects.map((project) => (
-                  <ProjectCard
-                    key={project.key}
-                    project={project}
-                    collapsed={collapsedProjects.has(project.key)}
-                    onToggle={() => toggleProject(project.key)}
-                    {...rowProps}
-                  />
-                ))}
+                {noMatches && (
+                  <div className="no-match">
+                    <p>{filtersActive ? "No sessions match these filters." : "Nothing to show."}</p>
+                    {filtersActive && (
+                      <button type="button" className="btn sm" onClick={clearFilters}>
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                )}
 
-                {hideFinished && finished.length > 0 && (
+                {hiddenFinished > 0 && (
                   <p className="hidden-note">
-                    {finished.length} finished {finished.length === 1 ? "session" : "sessions"} hidden ·{" "}
-                    <button type="button" className="text-button" onClick={() => setHideFinished(false)}>
+                    {hiddenFinished} finished {hiddenFinished === 1 ? "session" : "sessions"} hidden ·{" "}
+                    <button type="button" className="link" onClick={() => setHideFinished(false)}>
                       Show
                     </button>
                   </p>
@@ -272,6 +280,16 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
           </>
         )}
       </main>
+
+      {view === "table" && picked && pickedSession && (
+        <SidePanel
+          session={pickedSession}
+          decisions={decisionsBySession.get(pickedSession.key) ?? []}
+          ctx={{ ...ctx, now: second }}
+          opener={picked.opener}
+          onClose={() => setPicked(null)}
+        />
+      )}
     </div>
   );
 }
@@ -287,340 +305,42 @@ function Logo() {
   );
 }
 
-function Count({ tone, value, label }: { tone: string; value: number; label: string }) {
+function Counts({
+  attention,
+  working,
+  done,
+  className,
+}: {
+  attention: number;
+  working: number;
+  done: number;
+  className: string;
+}) {
   return (
-    <span className={`count tone-${tone}${value > 0 ? " nonzero" : ""}`}>
-      <span className="count-dot" />
-      <strong>{value}</strong>
-      <span className="count-label">{label}</span>
-    </span>
+    <fieldset className={className} aria-label="Session counts">
+      <span className={attention > 0 ? "cnt hot" : "cnt"}>
+        <StatusIcon status="needs_input" decorative />
+        <b>{attention}</b> need you
+      </span>
+      <span className="cnt">
+        <StatusIcon status="working" decorative />
+        <b>{working}</b> working
+      </span>
+      <span className="cnt">
+        <StatusIcon status="done" decorative />
+        <b>{done}</b> done
+      </span>
+    </fieldset>
   );
 }
 
 function ConnectionBadge({ connection }: { connection: Connection }) {
   const label = connection === "live" ? "Live" : connection === "connecting" ? "Connecting" : "Reconnecting";
   return (
-    <span className={`connection connection-${connection}`} role="status">
-      <span className="connection-dot" />
+    <span className={`live connection-${connection}`} role="status">
+      <i />
       {label}
     </span>
-  );
-}
-
-/**
- * One agent at a time, or all. Each agent's colour is a square swatch: status icons are round, and the default
- * tool colours are close to the status colours (Codex green vs done, Claude orange vs needs you).
- */
-function AgentFilter({
-  agents,
-  total,
-  selected,
-  onSelect,
-}: {
-  agents: AgentCount[];
-  total: number;
-  selected: string | null;
-  onSelect: (agent: string | null) => void;
-}) {
-  return (
-    <nav className="agent-filter" aria-label="Filter by agent">
-      <button
-        type="button"
-        className={selected === null ? "agent-chip all on" : "agent-chip all"}
-        aria-pressed={selected === null}
-        onClick={() => onSelect(null)}
-      >
-        All agents <span className="agent-count">{total}</span>
-      </button>
-      {agents.map((a) => (
-        <button
-          key={a.id}
-          type="button"
-          className={selected === a.id ? "agent-chip on" : "agent-chip"}
-          style={{ "--tool": a.color ?? "var(--muted)" } as CSSProperties}
-          aria-pressed={selected === a.id}
-          onClick={() => onSelect(selected === a.id ? null : a.id)}
-        >
-          <span className="tool-swatch" />
-          {a.label} <span className="agent-count">{a.count}</span>
-        </button>
-      ))}
-    </nav>
-  );
-}
-
-interface RowContext {
-  toolById: Map<string, ToolInfo>;
-  showTool: boolean;
-  now: number;
-  /** Viewed from a paired phone: no actions that open apps on the PC. */
-  remote: boolean;
-}
-
-/** Collapsed project folders, remembered per browser by project key. */
-function useCollapsedProjects(): [Set<string>, (key: string) => void] {
-  const STORAGE_KEY = "collapsed-projects";
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
-    try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-      return new Set(Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : []);
-    } catch {
-      return new Set();
-    }
-  });
-  const toggle = (key: string) => {
-    const next = new Set(collapsed);
-    if (!next.delete(key)) next.add(key);
-    setCollapsed(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
-    } catch {
-      // Only a convenience.
-    }
-  };
-  return [collapsed, toggle];
-}
-
-const SUMMARY_PARTS: [Status, string][] = [
-  ["working", "working"],
-  ["idle", "idle"],
-  ["done", "done"],
-];
-
-/** Stays visible when the folder is collapsed, so it still says what's going on inside. */
-function ProjectSummary({ sessions }: { sessions: Session[] }) {
-  const parts = SUMMARY_PARTS.map(
-    ([status, label]) => [status, sessions.filter((s) => s.status === status).length, label] as const,
-  ).filter(([, n]) => n > 0);
-  return (
-    <span className="project-summary">
-      {parts.map(([status, n, label]) => (
-        <span key={status} className={`summary-part tone-${status}`}>
-          <span className="summary-dot" />
-          {n} {label}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function ProjectCard({
-  project,
-  collapsed,
-  onToggle,
-  ...context
-}: { project: Project; collapsed: boolean; onToggle: () => void } & RowContext) {
-  const rowsId = `rows-${project.key.replace(/[^a-z0-9]/gi, "-")}`;
-  return (
-    <section className={collapsed ? "project collapsed" : "project"} aria-label={project.name}>
-      <button
-        type="button"
-        className="project-head"
-        aria-expanded={!collapsed}
-        aria-controls={rowsId}
-        onClick={onToggle}
-      >
-        <svg className="chevron" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M6 4l4 4-4 4" />
-        </svg>
-        <svg className="folder" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M1.75 4.25c0-.69.56-1.25 1.25-1.25h3.1l1.5 1.5H13c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H3c-.69 0-1.25-.56-1.25-1.25z" />
-        </svg>
-        <span className="project-name">{project.name}</span>
-        <span className="project-path" title={project.cwd}>
-          {project.cwd}
-        </span>
-        <ProjectSummary sessions={project.sessions} />
-      </button>
-      {!collapsed && (
-        <ul className="rows" id={rowsId}>
-          {project.sessions.map((session) => (
-            <SessionRow key={session.key} session={session} showProject={false} {...context} />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function StatusIcon({ status }: { status: Status }) {
-  const label = STATUS_LABEL[status];
-  switch (status) {
-    case "needs_input":
-      return (
-        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
-          <circle cx="8" cy="8" r="7" className="fill" />
-          <path d="M8 4.5v4" className="glyph" />
-          <circle cx="8" cy="11.25" r="0.9" className="glyph-dot" />
-        </svg>
-      );
-    case "error":
-      return (
-        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
-          <circle cx="8" cy="8" r="7" className="fill" />
-          <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" className="glyph" />
-        </svg>
-      );
-    case "done":
-      return (
-        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
-          <circle cx="8" cy="8" r="7" className="fill" />
-          <path d="M5 8.25l2 2 4-4.25" className="glyph" />
-        </svg>
-      );
-    case "working":
-      return (
-        <svg className="status-icon spin" viewBox="0 0 16 16" role="img" aria-label={label}>
-          <circle cx="8" cy="8" r="6" className="track" />
-          <path d="M8 2a6 6 0 0 1 6 6" className="arc" />
-        </svg>
-      );
-    case "idle":
-      return (
-        <svg className="status-icon" viewBox="0 0 16 16" role="img" aria-label={label}>
-          <circle cx="8" cy="8" r="5.5" className="ring" />
-        </svg>
-      );
-  }
-}
-
-/** What the row says under its title. Finished and idle rows need nothing beyond their time. */
-function detailFor(session: Session): string | undefined {
-  switch (session.status) {
-    case "needs_input":
-      return session.message ?? "Waiting for your input";
-    case "error":
-      return session.message ?? "Stopped with an error";
-    case "working":
-      return session.message;
-    default:
-      return undefined;
-  }
-}
-
-function SessionRow({
-  session,
-  toolById,
-  showTool,
-  showProject,
-  now,
-  remote,
-}: { session: Session; showProject: boolean } & RowContext) {
-  const tool = toolById.get(session.tool);
-  const project = projectName(session.cwd);
-  const title = session.title?.trim() ? session.title : undefined;
-  const name = title ?? (showProject ? project : "Untitled session");
-  const detail = detailFor(session);
-  const stalled = isStalled(session);
-  const openTarget =
-    session.host === "Codex Desktop"
-      ? "Codex"
-      : session.host === "Claude Desktop"
-        ? "Claude"
-        : session.host?.startsWith("VS Code")
-          ? "VS Code"
-          : undefined;
-
-  return (
-    <li
-      className={`row status-${session.status}${stalled ? " stalled" : ""}`}
-      style={{ "--tool": tool?.color ?? "var(--muted)" } as CSSProperties}
-    >
-      <StatusIcon status={session.status} />
-      <div className="row-main">
-        <div className="row-title">
-          <span className={title ? "row-name" : "row-name untitled"} title={title ?? session.cwd}>
-            {name}
-          </span>
-          {showProject && title && (
-            <span className="row-project" title={session.cwd}>
-              {project}
-            </span>
-          )}
-          {stalled && (
-            <span className="badge badge-warn" title="No events for 10 minutes or more">
-              No activity
-            </span>
-          )}
-        </div>
-        {detail && <p className="row-detail">{detail}</p>}
-        {needsApprovalHint(session) && (
-          <p className="row-hint">Approved it? This updates when the command finishes.</p>
-        )}
-      </div>
-      <div className="row-meta">
-        <span className="row-since" title={new Date(statusSince(session)).toLocaleString()}>
-          {statusDuration(session, now)}
-        </span>
-        {(showTool || session.host) && (
-          <span className="row-source">
-            {showTool && (
-              <span className="tool-tag">
-                <span className="tool-swatch" />
-                {tool?.label ?? session.tool}
-              </span>
-            )}
-            {showTool && session.host && " · "}
-            {session.host}
-          </span>
-        )}
-      </div>
-      <div className="row-actions">
-        {openTarget && !remote && <OpenButton sessionKey={session.key} target={openTarget} />}
-        <button
-          type="button"
-          className="icon-button dismiss"
-          title="Dismiss"
-          aria-label={`Dismiss ${name}`}
-          onClick={() => void dismissSession(session.key)}
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-          </svg>
-        </button>
-      </div>
-    </li>
-  );
-}
-
-type OpenState = "idle" | "opening" | "failed";
-
-/** Shows progress right away: VS Code takes about a second to switch windows and then tabs. */
-function OpenButton({ sessionKey, target }: { sessionKey: string; target: string }) {
-  const [state, setState] = useState<OpenState>("idle");
-
-  useEffect(() => {
-    if (state === "idle") return;
-    const id = setTimeout(() => setState("idle"), state === "opening" ? 1500 : 2500);
-    return () => clearTimeout(id);
-  }, [state]);
-
-  const open = async () => {
-    setState("opening");
-    if (!(await openSession(sessionKey))) setState("failed");
-  };
-
-  return (
-    <button
-      type="button"
-      className={`open-button open-${state}`}
-      title={`Open this session in ${target}`}
-      disabled={state === "opening"}
-      onClick={() => void open()}
-    >
-      {state === "opening" ? (
-        <svg className="spin" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" />
-        </svg>
-      ) : (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5L7.5 8.5" />
-        </svg>
-      )}
-      <span>
-        {state === "opening" ? "Opening" : state === "failed" ? "Couldn't open" : `Open in ${target}`}
-      </span>
-    </button>
   );
 }
 

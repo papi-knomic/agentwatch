@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentsInUse, matchesAgent } from "./board";
+import { agentsInUse, groupByProject, matchesAgent } from "./board";
 import type { Session, ToolInfo } from "./useAgentStream";
 
 const session = (key: string, tool: string): Session => ({
@@ -41,5 +41,26 @@ describe("matchesAgent", () => {
     expect(matchesAgent(session("a", "codex"), null)).toBe(true);
     expect(matchesAgent(session("a", "codex"), "codex")).toBe(true);
     expect(matchesAgent(session("a", "codex"), "opencode")).toBe(false);
+  });
+});
+
+describe("groupByProject with a custom order", () => {
+  const at = (key: string, cwd: string, status: Session["status"], since: string): Session => ({
+    ...session(key, "claude-code"),
+    cwd,
+    status,
+    statusSince: since,
+    updatedAt: since,
+  });
+  it("orders rows inside a project by the given comparison but keeps projects by urgency", () => {
+    const list = [
+      at("a", "/p/one", "done", "2026-10-20T10:00:00.000Z"),
+      at("b", "/p/one", "working", "2026-10-20T10:01:00.000Z"),
+      at("c", "/p/two", "needs_input", "2026-10-20T10:02:00.000Z"),
+    ];
+    const byKeyDesc = (x: Session, y: Session) => y.key.localeCompare(x.key);
+    const groups = groupByProject(list, byKeyDesc);
+    expect(groups.map((g) => g.name)).toEqual(["two", "one"]);
+    expect(groups[1]?.sessions.map((s) => s.key)).toEqual(["b", "a"]);
   });
 });
