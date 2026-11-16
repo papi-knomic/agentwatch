@@ -52,4 +52,37 @@ describe("OpenCode install", () => {
   it("tells the user to restart OpenCode", async () => {
     expect((await installOpenCode(options)).notes?.[0]).toMatch(/Restart OpenCode/);
   });
+
+  it("adds answering from the dashboard only with remoteActions, and an unflagged install keeps it", async () => {
+    const withDecide = {
+      ...options,
+      remoteActions: true,
+      decideCommand: 'node "/opt/a/cli.js" decide --tool opencode',
+    };
+    await installOpenCode(options);
+    expect(await readFile(openCodePluginPath(options), "utf8")).toContain("const DECIDE = null;");
+
+    const added = await installOpenCode(withDecide);
+    expect(added.changed).toBe(true);
+    expect(added.summary[0]).toMatch(/answering from the dashboard/);
+    const text = await readFile(openCodePluginPath(options), "utf8");
+    expect(text).toContain('const DECIDE = ["node","/opt/a/cli.js","decide","--tool","opencode"];');
+
+    // Twice changes nothing; a plain install (flag left out) and a moved CLI keep the choice.
+    expect((await installOpenCode(withDecide)).changed).toBe(false);
+    expect((await installOpenCode(options)).changed).toBe(false);
+    const moved = { ...options, hookCommand: 'node "/opt/b/cli.js" hook --tool opencode' };
+    await installOpenCode(moved);
+    expect(await readFile(openCodePluginPath(options), "utf8")).toContain('"/opt/b/cli.js","decide"');
+
+    const removed = await installOpenCode({ ...options, remoteActions: false });
+    expect(removed.changed).toBe(true);
+    expect(await readFile(openCodePluginPath(options), "utf8")).toContain("const DECIDE = null;");
+  });
+
+  it("a dry run writes nothing", async () => {
+    const result = await installOpenCode({ ...options, dryRun: true, remoteActions: true });
+    expect(result.changed).toBe(true);
+    await expect(readFile(openCodePluginPath(options), "utf8")).rejects.toThrow();
+  });
 });

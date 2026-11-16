@@ -140,7 +140,7 @@ describe("setup service", () => {
         supported: true,
         enabled: false,
         installed: false,
-        tools: ["Claude Code", "Codex"],
+        tools: ["Claude Code", "Codex", "OpenCode"],
         backgroundHold: "full",
       });
 

@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { adapters, getAdapter, toolDefaults } from "../adapters/index.js";
 import type { Adapter } from "../adapters/types.js";
-import { ensureConfig, setRemoteActionsFlag } from "../core/config.js";
+import { ensureConfig, readConfig, setRemoteActionsFlag } from "../core/config.js";
 import { APP_NAME } from "../core/constants.js";
 import { registerWindowsAppId, unregisterWindowsAppId, WINDOWS_APP_KEY } from "../notify/windows-identity.js";
 import { buildDecideCommand, buildHookCommand } from "./hook-command.js";
@@ -109,7 +109,7 @@ export async function installCommand(options: {
 
 /**
  * The `decide` hooks do nothing unless the config flag is on too, so both flip together. Only claims a change when
- * a tool that has the hooks (Claude Code, Codex) is among the targets, and an uninstall of it turns the flag off again
+ * a tool that has the hooks (Claude Code, Codex, OpenCode) is among the targets, and an uninstall of it turns the flag off again
  * (it is ours, and leaving it on with no hooks would be misleading). Not in a `--home` sandbox.
  */
 export async function syncRemoteActionsFlag(options: {
@@ -126,7 +126,7 @@ export async function syncRemoteActionsFlag(options: {
   if (!options.supported) {
     if (remoteActions !== undefined && !uninstall) {
       log(
-        `Remote actions: not available for ${options.targetNames} (Claude Code and Codex only), nothing changed.`,
+        `Remote actions: not available for ${options.targetNames} (Claude Code, Codex and OpenCode only), nothing changed.`,
       );
     }
     return;
@@ -138,7 +138,13 @@ export async function syncRemoteActionsFlag(options: {
     return;
   }
   if (dryRun) {
-    log(`Remote actions: would turn ${wanted ? "on" : "off"}.`);
+    // A dry run that promises a change which wouldn't happen is misleading: say so when it's already that way.
+    const current = (await readConfig(toolDefaults(), options.env))?.remoteActions === true;
+    log(
+      current === wanted
+        ? `Remote actions: already ${wanted ? "on" : "off"}, nothing to change.`
+        : `Remote actions: would turn ${wanted ? "on" : "off"}.`,
+    );
     return;
   }
   if (!uninstall) await ensureConfig(toolDefaults(), options.env);

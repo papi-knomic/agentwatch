@@ -739,8 +739,9 @@ export function createAppServer(options: AppServerOptions): Server {
     }
     const questions = kind === "question" ? parseQuestions(record.questions) : undefined;
     if (kind === "question" && !questions) return invalid("Invalid questions");
-    // Only PermissionRequest decisions can be concurrent: a PreToolUse question hook blocks the question UI in every host.
-    const concurrent = record.concurrent === true && kind !== "question";
+    // The caller (an adapter's `decide`) knows its host: Claude Code's PreToolUse question hook blocks the question UI
+    // in every host, so it never sends concurrent for one; OpenCode's plugin runs beside its question prompt.
+    const concurrent = record.concurrent === true;
 
     // Nothing to wait for: the caller falls back to Claude Code's own prompt straight away.
     if (config.remoteActions !== true) return sendJson(res, 200, { id: null, reason: "disabled" });

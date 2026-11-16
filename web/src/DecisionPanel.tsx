@@ -9,7 +9,8 @@ import { type PendingDecision, type ResolveOutcome, resolveDecision } from "./us
 type Phase = "idle" | "sending" | ResolveOutcome;
 
 /** Where a concurrent prompt is also shown, from the session's host ("VS Code*", "Claude Desktop", ...). */
-export function concurrentPlace(host: string | undefined): string {
+export function concurrentPlace(host: string | undefined, sessionKey?: string): string {
+  if (sessionKey?.startsWith("opencode:")) return "OpenCode";
   if (host === "Claude Desktop") return "the Claude app";
   if (host?.startsWith("VS Code")) return "VS Code";
   return "its own window";
@@ -147,7 +148,8 @@ export function DecisionPanel({
       )}
       {canAnswer && !over && decision.concurrent === true && (
         <p className="decision-note">
-          Also showing in {concurrentPlace(host)}. Answer here or there; whichever is first counts.
+          Also showing in {concurrentPlace(host, decision.sessionKey)}. Answer here or there; whichever is
+          first counts.
         </p>
       )}
       {canAnswer && !over && decision.concurrent !== true && (

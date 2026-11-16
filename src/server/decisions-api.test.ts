@@ -644,21 +644,16 @@ describe("concurrent decisions (VS Code / Claude Desktop permission and plan pro
     expect(byId.get(plain)).not.toHaveProperty("concurrent");
   });
 
-  it("keeps the blocking rules for a question, even if the caller claims concurrent", async () => {
+  it("registers a question as concurrent when its adapter says the host shows its own (OpenCode), without a viewer", async () => {
     config.remoteActionsBackgroundHold = "short";
     await startSession();
-    const none = await send("POST", "/api/decisions", {
-      headers: auth,
-      body: { ...questionBody, concurrent: true },
-    });
+    // Without the claim a question still needs a viewer.
+    const none = await send("POST", "/api/decisions", { headers: auth, body: questionBody });
     expect(JSON.parse(none.body)).toEqual({ id: null, reason: "no_viewer" });
 
-    const background = await openDashboard(false);
     const id = await register({ ...questionBody, concurrent: true });
-    const found = decisions.list().find((d) => d.id === id);
-    expect(Date.parse(found?.expiresAt ?? "") - Date.parse(found?.createdAt ?? "")).toBe(300);
-    expect(decisions.debugLog().at(-1)).toMatchObject({ kind: "question", hostClass: "blocking" });
-    background.close();
+    expect(decisions.list().find((d) => d.id === id)).toHaveProperty("concurrent", true);
+    expect(decisions.debugLog().at(-1)).toMatchObject({ kind: "question", hostClass: "concurrent" });
   });
 
   it("leaves nothing stuck when decide is killed (its wait connection drops)", async () => {

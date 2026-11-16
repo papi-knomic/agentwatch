@@ -225,7 +225,15 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   1.x must be restarted to load it. No event on quit: sessions go when the plugin's pid exits, but 2.x runs plugins
   in a background service that outlives the TUI, so 2.x sessions expire instead. 2.2.6 ends a turn after a rejected
   permission with `execution.interrupted` reason `shutdown`. Errors, retries, Esc and subagents weren't captured.
-- Remote actions (answer from the dashboard; Claude Code, and Codex for permissions only; opt-in): for Claude Code
+  Answering from the dashboard (opt-in, `install --tool opencode --remote-actions`; an unflagged install keeps the
+  choice): on a permission or question the plugin starts `agentwatch decide --tool opencode` as a child (stdin: cut-down
+  JSON with a ≤300-char preview, never the diff; stdout: one reply line), at most 5 at a time, killed when OpenCode
+  answers first (`*.replied` matched by request id) or exits, all errors swallowed, and replies to the original
+  child session/request: 1.x `POST /permission/:id/reply` `{reply: once|reject}` and `POST /question/:id/reply`
+  `{answers: string[][]}` via the plugin client's `_client.post`, 2.x `ctx.permission.reply`. Approve is always `once`.
+  Verified live on 1.19.3 (approve, deny, question, answered-in-OpenCode-first). Unverified: 2.x (not installed; source
+  only), 2.x question forms (reply route not found, so not offered), multi-select and free-text answers (options only).
+- Remote actions (answer from the dashboard; Claude Code, Codex for permissions only, OpenCode for permissions and, on 1.x, questions; opt-in): for Claude Code
   `PermissionRequest` and `PreToolUse` (`AskUserQuestion`) hooks, for Codex one `PermissionRequest` hook, run `agentwatch decide`, which registers a pending decision with the server
   (`POST /api/decisions`, token), long-polls it (`GET /api/decisions/:id/wait`, token) and prints the documented hook
   JSON. Resolving (`POST /api/decisions/:id/resolve`) needs the dashboard's `Origin` header, not the token: that blocks
@@ -274,9 +282,10 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
   unverified); questions whose multi-select labels contain a comma are not offered. Payload
   fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not
-  captures. Grok is unsupported (see Grok above); Codex is supported for permissions only (see Codex above). OpenCode has an
-  HTTP permission API (future work): the adapter already tags a subagent's prompts with its child session id as
-  `agentId` and `openCodeRequestRef()` gives the request to reply to. Tool-specific parsing and output live in each
+  captures. Grok is unsupported (see Grok above); Codex is supported for permissions only (see Codex above). OpenCode is
+  supported through its plugin (permissions on 1.x and 2.x, questions on 1.x; see OpenCode above); its decisions are
+  concurrent, questions included (`concurrent` is now honoured for any kind: the adapter says whether its host shows its
+  own prompt). Tool-specific parsing and output live in each
   adapter's `decide` capability (`Adapter.decide`, src/adapters/types.ts); src/cli/decide.ts is the generic flow. Hooks can't send new prompts or start plans; only Claude Code
   Channels (a research preview) could, and that is out of scope.
 - Remote mode: the "Set up phone" wizard runs `tailscale serve` itself (`src/server/serve.ts`, tested with an injected fake

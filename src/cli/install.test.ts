@@ -73,6 +73,24 @@ describe("syncRemoteActionsFlag", () => {
     expect(lines[0]).toMatch(/unchanged because --home/);
   });
 
+  it("says it is already on in a dry run when the flag is already set", async () => {
+    await run({ remoteActions: true });
+    lines = [];
+    await run({ remoteActions: true, dryRun: true });
+    expect(lines).toEqual(["Remote actions: already on, nothing to change."]);
+
+    lines = [];
+    await run({ uninstall: true, dryRun: true });
+    expect(lines).toEqual(["Remote actions: would turn off."]);
+    expect(await flag()).toBe(true);
+  });
+
+  it("says it would turn the flag on in a dry run when it is off", async () => {
+    await run({ remoteActions: true, dryRun: true });
+    expect(lines).toEqual(["Remote actions: would turn on."]);
+    expect(await flag()).toBe(false);
+  });
+
   it("prints nothing when nothing was asked for", async () => {
     await run({});
     expect(lines).toEqual([]);

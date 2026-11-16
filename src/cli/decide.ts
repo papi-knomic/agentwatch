@@ -86,7 +86,8 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
     const base = `http://127.0.0.1:${config.port}`;
     const headers = { "content-type": "application/json", authorization: `Bearer ${config.token}` };
 
-    const concurrent = parsed.concurrent === true && parsed.kind !== "question";
+    // The adapter decides: Claude Code never marks a question concurrent (its hook blocks the question UI), OpenCode does.
+    const concurrent = parsed.concurrent === true;
     const body = JSON.stringify({
       tool: toolId,
       sessionId: parsed.sessionId,

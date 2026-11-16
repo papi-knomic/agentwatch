@@ -125,7 +125,7 @@ On Windows, after `install`, notifications show under the app's own name and ico
 PowerShell. If none appear, check *Settings → System → Notifications*: allow notifications for AgentWatch (or Windows
 PowerShell before install) and turn off Do Not Disturb.
 
-### Answer prompts from the dashboard (Claude Code and Codex, opt-in)
+### Answer prompts from the dashboard (Claude Code, Codex and OpenCode, opt-in)
 
 Off by default. When on, a Claude Code or Codex permission request (for example "allow this Bash command?") or a
 question from Claude Code shows up on its session card with **Approve** / **Deny** buttons or the question's options,
@@ -133,6 +133,11 @@ so you can answer without switching windows. Codex has no hook for questions or 
 requests can be answered. Turning it on adds, per connected tool, a hook that waits for your answer: for Codex one
 extra synchronous `PermissionRequest` entry (timeout 600 s) next to the existing async one, which you have to approve
 once via `/hooks` in Codex like the others. Re-run `agentwatch install --remote-actions` to add it to Codex.
+
+For OpenCode (permissions and, on 1.x, questions with listed options), run `agentwatch install --tool opencode --remote-actions`
+and restart OpenCode: the plugin then starts a small waiting process for each prompt. OpenCode keeps showing its own prompt,
+and whichever answer comes first wins. Approve means "once" (never "always"). Details and what is unverified: the
+[OpenCode adapter docs](src/adapters/opencode/README.md).
 
 Turn it on from the dashboard (**Settings** > **Answering** > **Turn on**, which shows exactly what it will
 add first) or from a terminal:
@@ -363,7 +368,7 @@ the session switches to "working · Running approved command", usually within a 
 ## Limitations
 
 - Phone access runs Tailscale Serve for you on a click, but has only been tested against a simulated proxy and a fake CLI (see above).
-- Answering prompts from the dashboard is Claude Code (permissions, questions, plans) and Codex (permissions only), and opt-in. Whether Claude Code's own dialog stays visible
+- Answering prompts from the dashboard is Claude Code (permissions, questions, plans), Codex (permissions only) and OpenCode (permissions, and questions on 1.x), and opt-in. Whether Claude Code's own dialog stays visible
   while the hook waits in the terminal is unverified; VS Code and Claude desktop prompts are treated as concurrent (inferred, see above).
 - Cloud sessions (Claude Code on the web, Codex cloud) run on remote machines and can't reach your local dashboard.
 - Plain chat apps (claude.ai, ChatGPT, Grok chat) have no hooks.
