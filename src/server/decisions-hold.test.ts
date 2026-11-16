@@ -72,3 +72,31 @@ describe("short hold (only background tabs)", () => {
     expect(store.list()).toEqual([]);
   });
 });
+
+describe("maxHoldMs and visibleOnly (Codex)", () => {
+  it("expires at the adapter's cap, never beyond the default, and ignores the short-hold shrink", async () => {
+    const store = make();
+    store.create({
+      sessionKey: "codex:s",
+      kind: "permission",
+      toolName: "shell",
+      maxHoldMs: 30_000,
+      visibleOnly: true,
+    });
+    store.create({ sessionKey: "claude-code:s", kind: "permission", toolName: "Bash", maxHoldMs: 999_000 });
+    expect(store.hasVisibleOnly()).toBe(true);
+    store.shortenFullHolds();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(store.list().map((d) => d.sessionKey)).toEqual(["codex:s"]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(store.list()).toEqual([]);
+  });
+
+  it("cancelPending(onlyVisibleOnly) leaves Claude Code decisions alone", () => {
+    const store = make();
+    store.create({ sessionKey: "codex:s", kind: "permission", toolName: "shell", visibleOnly: true });
+    store.create({ sessionKey: "claude-code:s", kind: "permission", toolName: "Bash" });
+    store.cancelPending("hidden_cancel", true);
+    expect(store.list().map((d) => d.sessionKey)).toEqual(["claude-code:s"]);
+  });
+});

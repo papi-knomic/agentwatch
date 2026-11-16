@@ -43,10 +43,21 @@ decide). `--no-remote-actions` removes only it; `uninstall` removes it with the 
   `"behavior":"deny"` plus `"message":"Denied from the AgentWatch dashboard."`. `updatedInput`, `updatedPermissions`
   and `interrupt` fail closed in Codex, so they are never sent. Any deny wins in Codex; no output means the normal
   approval prompt.
-- Codex has no hook for questions (`request_user_input`) or plans, so only permission cards exist for Codex.
-- Blocking class: the hook is treated as holding Codex's own prompt back, so it follows the background-hold setting
-  (about 100 s while a dashboard tab is visible). Whether the desktop app or VS Code extension shows its own prompt
-  alongside the hook is unverified.
+- Codex has no hook for questions (`request_user_input`) or plans, so only permission cards exist for Codex. Questions
+  cannot be answered at all (source-verified): the sync variant replies over the app-server's own connection and the
+  async variant is just a message that ends the turn, so they are notify-only.
+- **Not with Codex's auto reviewer.** Codex runs `PermissionRequest` hooks first, then the reviewer, then the user
+  prompt ([approvals.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/approvals.rs), `run_permission_request_hooks` before `request_reviewer_approval`), so
+  a waiting hook delays every auto-reviewed call. The payload has no reviewer field, so `decide` reads
+  `approvals_reviewer` (`auto_review`, alias `guardian_subagent`; enum `ApprovalsReviewer` in
+  [config_types.rs](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/config_types.rs)) from
+  `$CODEX_HOME/config.toml` (or `~/.codex/config.toml`, top level or the active `profile` table) with a tolerant
+  line reader and stays silent when it is on. The desktop app may store the setting elsewhere (unknown), so leave
+  Codex answering off if you use the auto reviewer.
+- Hold policy (so a missed reviewer costs little): Codex ignores the background-hold setting. It registers only while
+  a dashboard tab is visible, is given back to Codex when no tab is visible any more, and waits at most 30 s
+  (`DecideRequest.holdPolicy`). Whether the desktop app or VS Code extension shows its own prompt alongside the hook
+  is unverified.
 - Preview: `tool_input.command` (string, or an argv array: unverified), at most 300 characters, held in server memory
   only while pending. `agent_id`/`agent_type` show which subagent is asking.
 - Unverified: a real round trip against a live Codex has not been captured; the fixture follows the docs.

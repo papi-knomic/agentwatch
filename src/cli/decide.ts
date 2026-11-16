@@ -94,6 +94,8 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
       kind: parsed.kind,
       toolName: parsed.toolName,
       ...(concurrent ? { concurrent: true } : {}),
+      ...(!concurrent && parsed.holdPolicy?.visibleOnly ? { visibleOnly: true } : {}),
+      ...(!concurrent && parsed.holdPolicy?.maxHoldMs ? { maxHoldMs: parsed.holdPolicy.maxHoldMs } : {}),
       ...(parsed.agentId ? { agentId: parsed.agentId, agentType: parsed.agentType } : {}),
       ...(parsed.kind !== "question" ? { preview: parsed.preview } : { questions: parsed.questions }),
     });
@@ -116,9 +118,11 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
     // null: no dashboard is open (or the feature is off, or a cap was hit). Don't hold anything up.
     if (typeof id !== "string") return;
 
+    // The server ends the decision at maxHoldMs; the extra second only covers a server that has gone away.
+    const policyMs = parsed.holdPolicy?.maxHoldMs;
+    const blockingMs = policyMs ? Math.min(deps.deadlineMs, policyMs + 1_000) : deps.deadlineMs;
     const deadline =
-      deps.now() +
-      (concurrent ? (deps.concurrentDeadlineMs ?? DECIDE_CONCURRENT_DEADLINE_MS) : deps.deadlineMs);
+      deps.now() + (concurrent ? (deps.concurrentDeadlineMs ?? DECIDE_CONCURRENT_DEADLINE_MS) : blockingMs);
     let failures = 0;
     while (deps.now() < deadline) {
       const chunk = Math.min(POLL_CHUNK_MS, deadline - deps.now());

@@ -6,6 +6,7 @@ import { APP_NAME, MAX_EVENT_BODY_BYTES } from "../core/constants.js";
 import {
   BACKGROUND_HOLDS,
   type BackgroundHold,
+  DECISION_TTL_MS,
   DEFAULT_BACKGROUND_HOLD,
   parseQuestions,
   truncate,
@@ -159,6 +160,7 @@ export function createAppServer(options: AppServerOptions): Server {
   const hiddenMs = options.presence?.hiddenMs ?? HIDDEN_DEBOUNCE_MS;
   let noViewerSince: number | null = null;
   let hiddenSince: number | null = null;
+  let visibleOnlyHiddenSince: number | null = null;
 
   /** Read on every use: the setting changes without a restart. */
   function holdMode(): BackgroundHold {
@@ -204,11 +206,20 @@ export function createAppServer(options: AppServerOptions): Server {
     if (hasVisibleViewer()) {
       noViewerSince = null;
       hiddenSince = null;
+      visibleOnlyHiddenSince = null;
       decisions.extendShortHolds();
       return;
     }
     if (hasConnectedViewer()) {
       noViewerSince = null;
+      // Decisions that asked for a visible tab (Codex) don't follow the background-hold setting.
+      if (decisions.hasVisibleOnly()) {
+        visibleOnlyHiddenSince ??= now;
+        if (now - visibleOnlyHiddenSince >= hiddenMs) {
+          visibleOnlyHiddenSince = null;
+          decisions.cancelPending("hidden_cancel", true);
+        }
+      } else visibleOnlyHiddenSince = null;
       if (mode === "full") {
         hiddenSince = null;
         decisions.extendShortHolds(); // the setting may have just changed from "short"
@@ -225,6 +236,7 @@ export function createAppServer(options: AppServerOptions): Server {
       return;
     }
     hiddenSince = null;
+    visibleOnlyHiddenSince = null;
     noViewerSince ??= now;
     if (now - noViewerSince >= graceMs) {
       noViewerSince = null;
@@ -742,6 +754,12 @@ export function createAppServer(options: AppServerOptions): Server {
     // The caller (an adapter's `decide`) knows its host: Claude Code's PreToolUse question hook blocks the question UI
     // in every host, so it never sends concurrent for one; OpenCode's plugin runs beside its question prompt.
     const concurrent = record.concurrent === true;
+    // Hold policy chosen by the adapter (see DecideRequest.holdPolicy): never longer than the default lifetime.
+    const visibleOnly = !concurrent && record.visibleOnly === true;
+    const maxHoldMs =
+      !concurrent && typeof record.maxHoldMs === "number" && Number.isFinite(record.maxHoldMs)
+        ? Math.min(Math.max(Math.trunc(record.maxHoldMs), 1000), DECISION_TTL_MS)
+        : undefined;
 
     // Nothing to wait for: the caller falls back to Claude Code's own prompt straight away.
     if (config.remoteActions !== true) return sendJson(res, 200, { id: null, reason: "disabled" });
@@ -753,11 +771,13 @@ export function createAppServer(options: AppServerOptions): Server {
       agentId: parseAgentId(record.agentId),
       concurrent,
       tool,
+      visibleOnly,
+      maxHoldMs,
     };
     // A concurrent prompt is already on screen in its host, so it needs no viewer now: the card shows up when a tab opens.
     const mode = holdMode();
     // Mode "off" only holds the terminal prompt back while a tab is actually in front of the user.
-    if (!concurrent && !(mode === "off" ? hasVisibleViewer() : hasConnectedViewer())) {
+    if (!concurrent && !(mode === "off" || visibleOnly ? hasVisibleViewer() : hasConnectedViewer())) {
       decisions.logRejected(attempt, "no_viewer");
       return sendJson(res, 200, { id: null, reason: "no_viewer" });
     }

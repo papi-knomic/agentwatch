@@ -175,6 +175,25 @@ describe("who counts as a viewer", () => {
     expect(await post()).toEqual({ id: null, reason: "no_viewer" });
   });
 
+  it("visibleOnly + maxHoldMs (Codex): needs a visible tab, is capped, and is dropped when the tab hides; others are unaffected", async () => {
+    await startSession();
+    const codexBody = { ...(permissionBody as object), visibleOnly: true, maxHoldMs: 30_000 };
+    const post = async (body: unknown) =>
+      JSON.parse((await send("POST", "/api/decisions", { headers: auth, body })).body);
+    const background = await openDashboard(false);
+    expect(await post(codexBody)).toEqual({ id: null, reason: "no_viewer" });
+    expect((await post(permissionBody)).id).toEqual(expect.any(String)); // Claude Code: any connected tab
+    await background.setVisible(true);
+    const id = (await post(codexBody)).id as string;
+    const found = decisions.list().find((d) => d.id === id);
+    expect(Date.parse(found?.expiresAt ?? "") - Date.parse(found?.createdAt ?? "")).toBe(30_000);
+    // the tab hides: the visible-only decision is given back, the default one stays (mode "full")
+    await background.setVisible(false);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(decisions.list().some((d) => d.id === id)).toBe(false);
+    expect(decisions.list()).toHaveLength(1);
+  });
+
   it("mode short: holds for the full lifetime with a visible tab, and only briefly with background tabs", async () => {
     config.remoteActionsBackgroundHold = "short";
     await startSession();

@@ -64,6 +64,11 @@ export interface DecideRequest {
    * deadline and never needs a viewer. false/absent: the hook blocks the tool's own prompt (the "blocking" class).
    */
   concurrent?: boolean;
+  /**
+   * Blocking requests only: a stricter hold than the user's background-hold setting. `visibleOnly`: register only while
+   * a dashboard tab is in front, and give the prompt back when none is. `maxHoldMs`: wait at most this long.
+   */
+  holdPolicy?: { visibleOnly?: boolean; maxHoldMs?: number };
 }
 
 /**

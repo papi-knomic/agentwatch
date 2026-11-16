@@ -95,4 +95,36 @@ describe("syncRemoteActionsFlag", () => {
     await run({});
     expect(lines).toEqual([]);
   });
+
+  it("keeps the master switch on while another tool still has answering", async () => {
+    await run({ remoteActions: true });
+    lines = [];
+    await run({ remoteActions: false, targetNames: "Codex", stillOn: ["Claude Code"] });
+    expect(await flag()).toBe(true);
+    expect(lines).toEqual(["Remote actions: still on for Claude Code (only Codex was turned off)."]);
+
+    lines = [];
+    await run({ uninstall: true, targetNames: "Codex", stillOn: ["Claude Code", "OpenCode"] });
+    expect(await flag()).toBe(true);
+    expect(lines[0]).toMatch(/still on for Claude Code, OpenCode/);
+  });
+
+  it("turns it off when the last tool with answering is turned off", async () => {
+    await run({ remoteActions: true });
+    lines = [];
+    await run({ remoteActions: false, targetNames: "Codex", stillOn: [] });
+    expect(await flag()).toBe(false);
+    expect(lines).toEqual(["Remote actions: off (restart the dashboard to apply)"]);
+  });
+
+  it("dry run says it would stay on, and enabling one tool still turns it on", async () => {
+    await run({ remoteActions: true });
+    lines = [];
+    await run({ remoteActions: false, dryRun: true, targetNames: "Codex", stillOn: ["Claude Code"] });
+    expect(lines).toEqual(["Remote actions: would stay on for Claude Code (only Codex was turned off)."]);
+    expect(await flag()).toBe(true);
+
+    await run({ remoteActions: true, stillOn: ["Claude Code"] });
+    expect(await flag()).toBe(true);
+  });
 });

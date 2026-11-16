@@ -111,6 +111,10 @@ export interface NewDecision {
   backgroundHold?: BackgroundHold | undefined;
   /** Adapter id, for diagnostics only. */
   tool?: string | undefined;
+  /** Blocking only: cancelled as soon as no tab is visible, whatever the background-hold setting says. */
+  visibleOnly?: boolean | undefined;
+  /** Blocking only: a lifetime shorter than the default (never longer). */
+  maxHoldMs?: number | undefined;
   preview?: string | undefined;
   questions?: DecisionQuestion[] | undefined;
 }
@@ -123,6 +127,9 @@ interface Entry {
   /** Which agent of the session asked (`main` when none). */
   agentKey: string;
   short: boolean;
+  /** This decision's full lifetime (the default, or the adapter's shorter cap). */
+  ttlMs: number;
+  visibleOnly: boolean;
   resolution?: Resolution;
   timer: NodeJS.Timeout;
   orphan?: NodeJS.Timeout;
@@ -222,7 +229,11 @@ export class DecisionStore {
     const createdMs = this.#now();
     const concurrent = input.concurrent === true;
     const short = !concurrent && input.hold === "short";
-    const lifetime = concurrent ? this.#concurrentTtlMs : short ? this.#shortHoldMs : this.#ttlMs;
+    const ttlMs =
+      !concurrent && input.maxHoldMs !== undefined && input.maxHoldMs > 0
+        ? Math.min(input.maxHoldMs, this.#ttlMs)
+        : this.#ttlMs;
+    const lifetime = concurrent ? this.#concurrentTtlMs : short ? Math.min(this.#shortHoldMs, ttlMs) : ttlMs;
     const decision: PendingDecision = {
       id,
       sessionKey: input.sessionKey,
@@ -255,6 +266,8 @@ export class DecisionStore {
       createdMs,
       agentKey: input.agentId ?? MAIN_AGENT_KEY,
       short,
+      ttlMs,
+      visibleOnly: !concurrent && input.visibleOnly === true,
       timer,
       waiters: new Set(),
     };
@@ -342,10 +355,17 @@ export class DecisionStore {
    * Cancels everything still unanswered, e.g. when no dashboard is being looked at any more. Concurrent decisions
    * are kept: their host shows its own prompt anyway, so nothing is being held back for a missing viewer.
    */
-  cancelPending(reason: DebugEnd = "no_viewer_cancel"): void {
+  cancelPending(reason: DebugEnd = "no_viewer_cancel", onlyVisibleOnly = false): void {
     for (const [id, entry] of this.#entries) {
+      if (onlyVisibleOnly && !entry.visibleOnly) continue;
       if (!entry.resolution && !entry.concurrent) this.#close(id, { type: "gone" }, reason);
     }
+  }
+
+  /** Whether an unanswered blocking decision needs a visible tab (see `NewDecision.visibleOnly`). */
+  hasVisibleOnly(): boolean {
+    for (const entry of this.#entries.values()) if (!entry.resolution && entry.visibleOnly) return true;
+    return false;
   }
 
   /** Whether any unanswered blocking decision exists (the viewer rules only concern those). */
@@ -372,9 +392,9 @@ export class DecisionStore {
   shortenFullHolds(): void {
     const now = this.#now();
     for (const [id, entry] of this.#entries) {
-      if (entry.short || entry.resolution || entry.concurrent) continue;
+      if (entry.short || entry.resolution || entry.concurrent || entry.visibleOnly) continue;
       entry.short = true;
-      const remaining = Math.max(Math.min(entry.createdMs + this.#ttlMs - now, this.#shortHoldMs), 1);
+      const remaining = Math.max(Math.min(entry.createdMs + entry.ttlMs - now, this.#shortHoldMs), 1);
       this.#rearm(id, entry, remaining, now);
     }
   }
@@ -396,7 +416,7 @@ export class DecisionStore {
     for (const [id, entry] of this.#entries) {
       if (!entry.short || entry.resolution) continue;
       entry.short = false;
-      this.#rearm(id, entry, Math.max(entry.createdMs + this.#ttlMs - now, 1), now);
+      this.#rearm(id, entry, Math.max(entry.createdMs + entry.ttlMs - now, 1), now);
     }
   }
 

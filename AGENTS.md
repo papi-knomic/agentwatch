@@ -282,7 +282,15 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
   unverified); questions whose multi-select labels contain a comma are not offered. Payload
   fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not
-  captures. Grok is unsupported (see Grok above); Codex is supported for permissions only (see Codex above). OpenCode is
+  captures. Grok is unsupported (see Grok above); Codex is supported for permissions only (see Codex above). Codex and its auto reviewer: Codex runs
+  `PermissionRequest` hooks before the reviewer (codex-rs/core/src/tools/approvals.rs), so a waiting hook delays
+  auto-approved calls; `decide --tool codex` stays silent when `approvals_reviewer` is `auto_review` / `guardian_subagent`
+  in `$CODEX_HOME/config.toml` (top level or active profile; the desktop app may keep it elsewhere, unknown), and users
+  of the auto reviewer should leave Codex answering off. Because of that unknown, Codex requests carry
+  `DecideRequest.holdPolicy` (`visibleOnly`, `maxHoldMs` 30s): registered only with a visible tab, cancelled 2s after the
+  last visible tab hides, ignoring the background-hold setting. Codex questions (`request_user_input`) cannot be
+  answered (sync variant replies over the app-server's own connection, async is a message that ends the turn): notify
+  only. OpenCode is
   supported through its plugin (permissions on 1.x and 2.x, questions on 1.x; see OpenCode above); its decisions are
   concurrent, questions included (`concurrent` is now honoured for any kind: the adapter says whether its host shows its
   own prompt). Tool-specific parsing and output live in each

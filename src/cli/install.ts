@@ -67,8 +67,17 @@ export async function installCommand(options: {
     for (const note of result.notes ?? []) console.log(`  Next: ${note}`);
   }
 
+  // Turning answering off for some tools must not switch it off for the others (the flag is the master switch).
+  const turningOff = options.uninstall || options.remoteActions === false;
+  const untouched = adapters.filter((a) => a.meta.remoteActions && !targets.includes(a));
+  const stillOn =
+    turningOff && !options.home && targets.some((a) => a.meta.remoteActions)
+      ? await withDecideInstalled(untouched, { homeDir, env, cliPath: options.cliPath })
+      : [];
+
   await syncRemoteActionsFlag({
     remoteActions: options.remoteActions,
+    stillOn,
     uninstall: options.uninstall,
     dryRun: options.dryRun,
     sandboxed: options.home !== undefined,
@@ -107,10 +116,35 @@ export async function installCommand(options: {
   }
 }
 
+/** Display names of the tools whose decide hooks/plugin are installed (adding them would change nothing). */
+async function withDecideInstalled(
+  candidates: Adapter[],
+  where: { homeDir: string; env: NodeJS.ProcessEnv; cliPath: string },
+): Promise<string[]> {
+  const found = await Promise.all(
+    candidates.map((adapter) =>
+      adapter
+        .install({
+          homeDir: where.homeDir,
+          env: where.env,
+          dryRun: true,
+          hookCommand: buildHookCommand(where.cliPath, adapter.meta.id),
+          remoteActions: true,
+          decideCommand: buildDecideCommand(where.cliPath, adapter.meta.id),
+        })
+        .then((r) => !r.changed)
+        .catch(() => false),
+    ),
+  );
+  return candidates.filter((_, i) => found[i]).map((a) => a.meta.displayName);
+}
+
 /**
  * The `decide` hooks do nothing unless the config flag is on too, so both flip together. Only claims a change when
  * a tool that has the hooks (Claude Code, Codex, OpenCode) is among the targets, and an uninstall of it turns the flag off again
- * (it is ours, and leaving it on with no hooks would be misleading). Not in a `--home` sandbox.
+ * (it is ours, and leaving it on with no hooks would be misleading). It is the master switch, though: while a tool
+ * that was not targeted still has its hooks (`stillOn`), turning answering off for the targets leaves it on. Not in
+ * a `--home` sandbox.
  */
 export async function syncRemoteActionsFlag(options: {
   remoteActions: boolean | undefined;
@@ -119,6 +153,8 @@ export async function syncRemoteActionsFlag(options: {
   sandboxed: boolean;
   supported: boolean;
   targetNames: string;
+  /** Tools outside this command that still have answering installed. */
+  stillOn?: string[];
   log: (line: string) => void;
   env?: NodeJS.ProcessEnv;
 }): Promise<void> {
@@ -132,9 +168,17 @@ export async function syncRemoteActionsFlag(options: {
     return;
   }
   if (!uninstall && remoteActions === undefined) return;
-  const wanted = uninstall ? false : remoteActions === true;
+  let wanted = uninstall ? false : remoteActions === true;
+  const stillOn = !wanted ? (options.stillOn ?? []) : [];
+  const keepOn = stillOn.length > 0;
+  if (keepOn) wanted = true;
   if (options.sandboxed) {
     log("Remote actions: the config flag is unchanged because --home was given.");
+    return;
+  }
+  const keepNote = `Remote actions: still on for ${stillOn.join(", ")} (only ${options.targetNames} was turned off).`;
+  if (keepOn) {
+    log(dryRun ? keepNote.replace("Remote actions: still on", "Remote actions: would stay on") : keepNote);
     return;
   }
   if (dryRun) {

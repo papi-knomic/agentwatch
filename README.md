@@ -130,7 +130,9 @@ PowerShell before install) and turn off Do Not Disturb.
 Off by default. When on, a Claude Code or Codex permission request (for example "allow this Bash command?") or a
 question from Claude Code shows up on its session card with **Approve** / **Deny** buttons or the question's options,
 so you can answer without switching windows. Codex has no hook for questions or plans, so for Codex only permission
-requests can be answered. Turning it on adds, per connected tool, a hook that waits for your answer: for Codex one
+requests can be answered, and not when you use Codex's auto reviewer (`approvals_reviewer = "auto_review"`): Codex runs
+the hook before the reviewer, so it would delay auto-approved requests. Leave Codex answering off if you use it.
+Codex questions (`request_user_input`) cannot be answered from the dashboard, only notified. Turning it on adds, per connected tool, a hook that waits for your answer: for Codex one
 extra synchronous `PermissionRequest` entry (timeout 600 s) next to the existing async one, which you have to approve
 once via `/hooks` in Codex like the others. Re-run `agentwatch install --remote-actions` to add it to Codex.
 
