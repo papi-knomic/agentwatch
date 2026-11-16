@@ -20,10 +20,6 @@ export function AgentsSection({ setup, onSetup }: { setup: Setup; onSetup: (setu
         ))}
       </ul>
       <ul className="setup-notes">
-        <li>
-          After connecting, start a new session in the tool; sessions that were already running keep their old
-          hooks.
-        </li>
         {setup.notes.map((note) => (
           <li key={note}>{note}</li>
         ))}
@@ -85,7 +81,7 @@ function ToolRow({ tool, cli, onSetup }: { tool: SetupTool; cli: string; onSetup
           step.kind !== "preview" && (
             <button
               type="button"
-              className="open-button"
+              className="btn"
               disabled={step.kind === "busy"}
               onClick={() => void run(true)}
             >
@@ -107,10 +103,10 @@ function ToolRow({ tool, cli, onSetup }: { tool: SetupTool; cli: string; onSetup
             ))}
           </ul>
           <div className="setup-buttons">
-            <button type="button" className="primary-button" onClick={() => void run(false)}>
+            <button type="button" className="btn pri" onClick={() => void run(false)}>
               Connect {tool.label}
             </button>
-            <button type="button" className="text-button" onClick={() => setStep({ kind: "idle" })}>
+            <button type="button" className="btn sm" onClick={() => setStep({ kind: "idle" })}>
               Cancel
             </button>
           </div>
@@ -213,7 +209,7 @@ export function RemoteActionsRow({
         {step.kind !== "preview" && (
           <button
             type="button"
-            className="open-button"
+            className="btn"
             disabled={step.kind === "busy"}
             onClick={() => void run(!on, true)}
           >
@@ -242,10 +238,10 @@ export function RemoteActionsRow({
             </p>
           )}
           <div className="setup-buttons">
-            <button type="button" className="primary-button" onClick={() => void run(!on, false)}>
+            <button type="button" className="btn pri" onClick={() => void run(!on, false)}>
               {on ? "Turn off" : "Turn on"}
             </button>
-            <button type="button" className="text-button" onClick={() => setStep({ kind: "idle" })}>
+            <button type="button" className="btn sm" onClick={() => setStep({ kind: "idle" })}>
               Cancel
             </button>
           </div>
@@ -293,7 +289,7 @@ export function CopyCommand({ command }: { command: string }) {
   return (
     <span className="copy-command">
       <code>{command}</code>
-      <button type="button" className="text-button" onClick={() => void copy()}>
+      <button type="button" className="btn sm" onClick={() => void copy()}>
         {copied ? "Copied" : "Copy"}
       </button>
     </span>

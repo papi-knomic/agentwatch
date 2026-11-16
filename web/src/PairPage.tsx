@@ -29,7 +29,7 @@ export function PairPage({ code, onPaired }: { code: string; onPaired: () => voi
   };
 
   return (
-    <main className="remote-screen">
+    <main className="remote-screen aw">
       <form className="remote-card" onSubmit={(e) => void submit(e)}>
         <h1>Pair this phone</h1>
         <p>
@@ -53,7 +53,7 @@ export function PairPage({ code, onPaired }: { code: string; onPaired: () => voi
               : `${error}. Make a new code from the dashboard on your PC.`}
           </p>
         )}
-        <button type="submit" className="primary-button remote-big" disabled={busy || error !== null}>
+        <button type="submit" className="btn pri remote-big" disabled={busy || error !== null}>
           {busy ? "Pairing…" : "Pair"}
         </button>
       </form>
@@ -63,7 +63,7 @@ export function PairPage({ code, onPaired }: { code: string; onPaired: () => voi
 
 export function NotPaired() {
   return (
-    <main className="remote-screen">
+    <main className="remote-screen aw">
       <div className="remote-card">
         <h1>{APP_DISPLAY_NAME}</h1>
         <p>This phone isn't paired. Pair it from the dashboard on your PC.</p>

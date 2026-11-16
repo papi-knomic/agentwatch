@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { StatusIcon } from "./parts";
 import { QrCode } from "./QrCode";
 import { DeviceRow } from "./RemoteAccess";
 import {
@@ -116,101 +117,137 @@ export function PhoneWizard() {
   const host = serve.host;
   const pairUrl = pair && host ? `https://${host}/#pair=${pair.code}` : null;
 
+  const step3 = !on ? "blocked" : justPaired || devices.length > 0 ? "done" : "current";
   return (
-    <div className="setup-remote phone-wizard">
-      <div className="setup-row-main">
-        <span className="setup-name">Set up phone</span>
-        <span className="setup-path">
-          Watch your agents and get notifications on your phone. It stays inside your own Tailscale network;
-          nothing is put on the public internet.
-        </span>
-      </div>
-      <div className="setup-detail">
-        <h3 className="remote-subhead">1. On this PC</h3>
-        <PcStep serve={serve} busy={busy} onTurnOn={() => void turnOn()} onRecheck={refresh} />
-        {message && (
-          <p className="setup-error" role="alert">
-            {message}
+    <section className="settings-card phone-wizard" aria-labelledby="wizard-title">
+      <h2 id="wizard-title">Set up phone</h2>
+      <p className="settings-text">
+        Watch your agents and get notifications on your phone. It stays inside your own Tailscale network;
+        nothing is put on the public internet.
+      </p>
+      <ol className="stepper">
+        <WizardStep n={1} title="On this PC" state={on ? "done" : "current"}>
+          <PcStep serve={serve} busy={busy} onTurnOn={() => void turnOn()} onRecheck={refresh} />
+          {message && (
+            <p className="note err" role="alert">
+              {message}
+            </p>
+          )}
+        </WizardStep>
+
+        <WizardStep n={2} title="On your phone" state="todo">
+          <p>
+            Install <strong>Tailscale</strong> and sign in with the same account as this PC (
+            <a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+              download
+            </a>
+            ). For notifications, also install <strong>ntfy</strong>:{" "}
+            <a href={NTFY_PLAY_URL} target="_blank" rel="noreferrer">
+              Google Play
+            </a>{" "}
+            or{" "}
+            <a href={NTFY_APP_STORE_URL} target="_blank" rel="noreferrer">
+              App Store
+            </a>
+            .
           </p>
-        )}
+        </WizardStep>
 
-        <h3 className="remote-subhead">2. On your phone</h3>
-        <p>
-          Install <strong>Tailscale</strong> and sign in with the same account as this PC (
-          <a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">
-            download
-          </a>
-          ). For notifications, also install <strong>ntfy</strong>:{" "}
-          <a href={NTFY_PLAY_URL} target="_blank" rel="noreferrer">
-            Google Play
-          </a>{" "}
-          or{" "}
-          <a href={NTFY_APP_STORE_URL} target="_blank" rel="noreferrer">
-            App Store
-          </a>
-          .
-        </p>
-
-        <h3 className="remote-subhead">3. Pair</h3>
-        {!on ? (
-          <p className="remote-hint">Finish step 1 first.</p>
-        ) : (
-          <>
-            <label className="phone-field">
-              <input
-                type="checkbox"
-                checked={withNtfy || phone?.enabled === true}
-                disabled={busy || phone?.enabled === true}
-                onChange={(e) => setWithNtfy(e.target.checked)}
-              />{" "}
-              Send notifications to this phone
-              {phone?.enabled ? " (already on)" : ""}
-            </label>
-            <div className="setup-buttons">
-              <button
-                type="button"
-                className="primary-button"
-                disabled={busy || !host}
-                onClick={() => void startPairing()}
-              >
-                Show pairing code
-              </button>
-            </div>
-            {pair && pairUrl && (
-              <div className="pair-box">
-                <QrCode text={pairUrl} label="QR code to pair a phone" />
-                <p>
-                  Scan with the phone's camera (Tailscale must be on). The code works once and expires in 2
-                  minutes. After pairing, tap <strong>Get notifications</strong> on the phone.
-                </p>
+        <WizardStep n={3} title="Pair" state={step3}>
+          {!on ? (
+            <p className="hint">Finish step 1 first.</p>
+          ) : (
+            <>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={withNtfy || phone?.enabled === true}
+                  disabled={busy || phone?.enabled === true}
+                  onChange={(e) => setWithNtfy(e.target.checked)}
+                />
+                Send notifications to this phone
+                {phone?.enabled ? " (already on)" : ""}
+              </label>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn pri"
+                  disabled={busy || !host}
+                  onClick={() => void startPairing()}
+                >
+                  Show pairing code
+                </button>
               </div>
-            )}
-            {justPaired && (
-              <p className="phone-paired" role="status">
-                Paired: {justPaired}
-              </p>
-            )}
-            {devices.length > 0 && (
-              <ul className="device-list">
-                {devices.map((device) => (
-                  <DeviceRow
-                    key={device.id}
-                    device={device}
-                    onChange={refreshDevices}
-                    onError={(text) => setMessage(text)}
-                  />
-                ))}
-              </ul>
-            )}
-            <div className="setup-buttons">
-              <button type="button" className="text-button" disabled={busy} onClick={() => void turnOff()}>
-                Turn off phone access
-              </button>
-            </div>
-          </>
-        )}
+              {pair && pairUrl && (
+                <div className="pair-box">
+                  <QrCode text={pairUrl} label="QR code to pair a phone" />
+                  <p>
+                    Scan with the phone's camera (Tailscale must be on). The code works once and expires in 2
+                    minutes. After pairing, tap <strong>Get notifications</strong> on the phone.
+                  </p>
+                </div>
+              )}
+              {justPaired && (
+                <p className="note ok" role="status">
+                  Paired: {justPaired}
+                </p>
+              )}
+              {devices.length > 0 && (
+                <ul className="device-list">
+                  {devices.map((device) => (
+                    <DeviceRow
+                      key={device.id}
+                      device={device}
+                      onChange={refreshDevices}
+                      onError={(text) => setMessage(text)}
+                    />
+                  ))}
+                </ul>
+              )}
+              <div className="actions">
+                <button type="button" className="btn sm dng" disabled={busy} onClick={() => void turnOff()}>
+                  Turn off phone access
+                </button>
+              </div>
+            </>
+          )}
+        </WizardStep>
+      </ol>
+    </section>
+  );
+}
+
+type StepState = "done" | "current" | "blocked" | "todo";
+
+function WizardStep({
+  n,
+  title,
+  state,
+  children,
+}: {
+  n: number;
+  title: string;
+  state: StepState;
+  children: ReactNode;
+}) {
+  const label = { done: "Done", current: "Next", blocked: "Waiting", todo: "" }[state];
+  return (
+    <li className={`step ${state}`}>
+      <span className="step-mark">
+        <StatusIcon
+          status={state === "done" ? "done" : state === "current" ? "needs_input" : "idle"}
+          decorative
+        />
+      </span>
+      <div className="step-body">
+        <h3>
+          <span className="step-n">Step {n}</span>
+          {title}
+          {label && <span className="step-state">{label}</span>}
+        </h3>
+        {children}
       </div>
-    </div>
+    </li>
   );
 }
 
@@ -226,7 +263,7 @@ function PcStep({
   onRecheck: () => void;
 }) {
   const recheck = (
-    <button type="button" className="text-button" disabled={busy} onClick={onRecheck}>
+    <button type="button" className="btn sm" disabled={busy} onClick={onRecheck}>
       Check again
     </button>
   );
@@ -253,7 +290,7 @@ function PcStep({
             </a>
           )}
           , then{" "}
-          <button type="button" className="primary-button" disabled={busy} onClick={onTurnOn}>
+          <button type="button" className="btn pri" disabled={busy} onClick={onTurnOn}>
             Turn on phone access
           </button>{" "}
           again.
@@ -262,7 +299,7 @@ function PcStep({
     case "port_in_use":
     case "error":
       return (
-        <p className="setup-error">
+        <p className="note err">
           {serve.message ?? "Something went wrong."} {recheck}
         </p>
       );
@@ -270,14 +307,14 @@ function PcStep({
       return (
         <p>
           Phone access is on{serve.host ? ` at https://${serve.host}` : ""}.{" "}
-          <button type="button" className="text-button" disabled={busy} onClick={onTurnOn}>
+          <button type="button" className="btn sm" disabled={busy} onClick={onTurnOn}>
             Re-apply
           </button>
         </p>
       );
     case "off":
       return (
-        <button type="button" className="primary-button" disabled={busy} onClick={onTurnOn}>
+        <button type="button" className="btn pri" disabled={busy} onClick={onTurnOn}>
           {busy ? "Turning on…" : "Turn on phone access"}
         </button>
       );

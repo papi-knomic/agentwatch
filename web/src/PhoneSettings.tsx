@@ -81,7 +81,7 @@ export function PhoneNotifications() {
       <div className="setup-row-action">
         <button
           type="button"
-          className="open-button"
+          className="btn"
           disabled={busy}
           onClick={() => void save({ enabled: !phone.enabled })}
         >
@@ -97,12 +97,12 @@ export function PhoneNotifications() {
           </p>
           <p>
             Topic: <code>{phone.topic}</code>{" "}
-            <button type="button" className="text-button" onClick={() => void copy()}>
+            <button type="button" className="btn sm" onClick={() => void copy()}>
               {copied ? "Copied" : "Copy"}
             </button>{" "}
             <button
               type="button"
-              className="text-button"
+              className="btn sm"
               disabled={busy}
               onClick={() => void save({ regenerateTopic: true })}
             >
@@ -144,7 +144,7 @@ export function PhoneNotifications() {
           <div className="setup-buttons">
             <button
               type="button"
-              className="text-button"
+              className="btn sm"
               disabled={busy || token.trim() === ""}
               onClick={() => void save({ token })}
             >
@@ -153,7 +153,7 @@ export function PhoneNotifications() {
             {phone.tokenSet && (
               <button
                 type="button"
-                className="text-button"
+                className="btn sm"
                 disabled={busy}
                 onClick={() => void save({ token: "" })}
               >
@@ -178,7 +178,7 @@ export function PhoneNotifications() {
           </p>
 
           <div className="setup-buttons">
-            <button type="button" className="primary-button" disabled={busy} onClick={() => void test()}>
+            <button type="button" className="btn pri" disabled={busy} onClick={() => void test()}>
               Send test
             </button>
           </div>

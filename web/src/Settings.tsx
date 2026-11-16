@@ -150,7 +150,7 @@ function NotificationsTab({
         <div className="settings-line">
           {permission === "granted" && <span className="connected-badge">On</span>}
           {permission === "default" && (
-            <button type="button" className="open-button" onClick={onEnableAlerts}>
+            <button type="button" className="btn" onClick={onEnableAlerts}>
               Enable browser alerts
             </button>
           )}

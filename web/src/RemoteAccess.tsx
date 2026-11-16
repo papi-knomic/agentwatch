@@ -134,7 +134,7 @@ export function RemoteAccess() {
         </span>
       </div>
       <div className="setup-row-action">
-        <button type="button" className="open-button" disabled={busy} onClick={() => void save(!enabled)}>
+        <button type="button" className="btn" disabled={busy} onClick={() => void save(!enabled)}>
           {enabled ? "Turn off" : "Turn on"}
         </button>
       </div>
@@ -152,13 +152,13 @@ export function RemoteAccess() {
           />
         </label>
         <div className="setup-buttons">
-          <button type="button" className="text-button" disabled={busy} onClick={() => void detect()}>
+          <button type="button" className="btn sm" disabled={busy} onClick={() => void detect()}>
             Detect
           </button>
           {enabled && (
             <button
               type="button"
-              className="text-button"
+              className="btn sm"
               disabled={busy || hostInput.trim() === settings.hosts.join(", ")}
               onClick={() => void save(true)}
             >
@@ -177,7 +177,7 @@ export function RemoteAccess() {
             <p>
               The "Set up phone" panel above runs this for you. To do it by hand, run this once on this PC:{" "}
               <code>{command}</code>{" "}
-              <button type="button" className="text-button" onClick={() => void copy(command)}>
+              <button type="button" className="btn sm" onClick={() => void copy(command)}>
                 {copied ? "Copied" : "Copy"}
               </button>
             </p>
@@ -189,7 +189,7 @@ export function RemoteAccess() {
             <div className="setup-buttons">
               <button
                 type="button"
-                className="primary-button"
+                className="btn pri"
                 disabled={busy || !host}
                 onClick={() => void startPairing()}
               >
@@ -271,7 +271,7 @@ export function DeviceRow({
         />
         Allow approvals
       </label>
-      <button type="button" className="deny-button" onClick={() => void act(() => revokeDevice(device.id))}>
+      <button type="button" className="btn sm dng" onClick={() => void act(() => revokeDevice(device.id))}>
         Revoke
       </button>
     </li>
