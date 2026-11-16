@@ -37,8 +37,10 @@ export function useAgentStream() {
   const [connection, setConnection] = useState<Connection>("connecting");
 
   useEffect(() => {
-    // The server holds Claude Code's own prompt back while it waits for an answer from here, so it only does that
-    // for a tab that says it is visible. Tell it on connect, on every visibility change, and now and then.
+    // The server holds Claude Code's own prompt back while it waits for an answer from here: fully while a tab says
+    // it is visible, only briefly when tabs are connected but hidden (Chrome calls covered and minimized windows
+    // hidden). Tell it on connect, on every visibility change, and now and then, hidden or not (a hidden tab's timer
+    // may only fire about once a minute, which the server tolerates; the open stream is what counts as connected).
     const clientId = randomClientId();
     const source = new EventSource(`/api/stream?client=${clientId}`);
     const reportPresence = () => {
@@ -49,9 +51,7 @@ export function useAgentStream() {
       }).catch(() => {});
     };
     document.addEventListener("visibilitychange", reportPresence);
-    const heartbeat = window.setInterval(() => {
-      if (document.visibilityState === "visible") reportPresence();
-    }, PRESENCE_HEARTBEAT_MS);
+    const heartbeat = window.setInterval(reportPresence, PRESENCE_HEARTBEAT_MS);
     source.addEventListener("snapshot", (e) => {
       reportPresence();
       const data = JSON.parse((e as MessageEvent<string>).data) as Snapshot;

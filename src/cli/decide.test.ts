@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { toolDefaults } from "../adapters/index.js";
 import { type Config, defaultToolSettings } from "../core/config.js";
 import { SessionStore } from "../core/store.js";
@@ -471,5 +471,84 @@ describe("runDecide against a real server", () => {
       "Which database should the app use?": "PostgreSQL",
       "Which extras do you want?": "Linting, CI",
     });
+  });
+});
+
+describe("runDecide with subagents and a session the server does not know yet", () => {
+  let permission: string;
+  beforeAll(async () => {
+    permission = await fixture("permission-request.json");
+  });
+
+  it("retries once when the session is not known yet, and then carries on to wait", async () => {
+    const calls: string[] = [];
+    const slept: number[] = [];
+    const h = harness(permission, baseConfig(1), {
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      fetch: async (input) => {
+        calls.push(String(input));
+        if (calls.length === 1) return json(200, { id: null, reason: "unknown_session" });
+        if (calls.length === 2) return json(200, { id: "abc" });
+        return json(200, { behavior: "allow" });
+      },
+    });
+    await runDecide("claude-code", h.deps);
+    expect(calls.slice(0, 2)).toEqual([
+      "http://127.0.0.1:1/api/decisions",
+      "http://127.0.0.1:1/api/decisions",
+    ]);
+    expect(slept).toEqual([300]);
+    expect(h.printed).toHaveLength(1);
+  });
+
+  it("gives up after that one retry, and never retries other reasons", async () => {
+    let calls = 0;
+    const unknown = harness(permission, baseConfig(1), {
+      fetch: async () => {
+        calls++;
+        return json(200, { id: null, reason: "unknown_session" });
+      },
+    });
+    await runDecide("claude-code", unknown.deps);
+    expect(calls).toBe(2);
+    expect(unknown.printed).toEqual([]);
+
+    calls = 0;
+    const noViewer = harness(permission, baseConfig(1), {
+      fetch: async () => {
+        calls++;
+        return json(200, { id: null, reason: "no_viewer" });
+      },
+    });
+    await runDecide("claude-code", noViewer.deps);
+    expect(calls).toBe(1);
+  });
+
+  it("tells the server which subagent is asking", async () => {
+    const payload = {
+      ...(JSON.parse(permission) as object),
+      agent_id: "a0dcb4961017438ab",
+      agent_type: "general-purpose",
+    };
+    let sent: unknown;
+    const h = harness(JSON.stringify(payload), baseConfig(1), {
+      fetch: async (_input, init) => {
+        sent = JSON.parse(String(init?.body));
+        return json(200, { id: null, reason: "no_viewer" });
+      },
+    });
+    await runDecide("claude-code", h.deps);
+    expect(sent).toMatchObject({ agentId: "a0dcb4961017438ab", agentType: "general-purpose" });
+
+    const main = harness(permission, baseConfig(1), {
+      fetch: async (_input, init) => {
+        sent = JSON.parse(String(init?.body));
+        return json(200, { id: null, reason: "no_viewer" });
+      },
+    });
+    await runDecide("claude-code", main.deps);
+    expect(sent).not.toHaveProperty("agentId");
   });
 });

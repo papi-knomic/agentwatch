@@ -24,6 +24,10 @@ export interface PendingDecision {
   sessionKey: string;
   kind: DecisionKind;
   toolName: string;
+  /** The subagent that is asking (Claude Code `agent_id`); absent: the main agent. */
+  agentId?: string;
+  /** Its type for display, e.g. "general-purpose" (Claude Code `agent_type`). Only set together with agentId. */
+  agentType?: string;
   /** Command, file path, compact JSON, or (kind "plan") the plan in Markdown. Truncated; display only. */
   preview?: string;
   questions?: DecisionQuestion[];
@@ -53,6 +57,12 @@ export const MAX_OPTIONS = 12;
  * own deadline (110 s), so the dashboard never offers an answer to a hook that has already stopped listening.
  */
 export const DECISION_TTL_MS = 100_000;
+/**
+ * With only background tabs connected, a prompt is held back this long (the user can't be shown it, but may be
+ * pulled to the dashboard by its alerts) before Claude Code's own dialog takes over. A tab becoming visible extends
+ * it to DECISION_TTL_MS.
+ */
+export const DECISION_SHORT_HOLD_MS = 15_000;
 
 export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;

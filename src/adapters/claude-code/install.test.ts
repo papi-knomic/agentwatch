@@ -149,6 +149,40 @@ describe("uninstallClaudeCode", () => {
   });
 });
 
+describe("subagent attribution hooks", () => {
+  it("installs PermissionRequest and SubagentStop as plain async hooks, next to the existing ones", async () => {
+    await writeSettings({
+      hooks: { PermissionRequest: [{ matcher: "Bash", hooks: [{ type: "command", command: "./mine.sh" }] }] },
+    });
+    const result = await installClaudeCode(options);
+    expect(result.summary).toContain("add PermissionRequest hook");
+    expect(result.summary).toContain("add SubagentStop hook");
+    const settings = await readSettings();
+    expect(settings.hooks.PermissionRequest).toEqual([
+      { matcher: "Bash", hooks: [{ type: "command", command: "./mine.sh" }] },
+      { hooks: [{ type: "command", command: HOOK, async: true, timeout: 10 }] },
+    ]);
+    expect(settings.hooks.SubagentStop).toEqual([
+      { hooks: [{ type: "command", command: HOOK, async: true, timeout: 10 }] },
+    ]);
+  });
+
+  it("is idempotent, upgrades an older install by adding only the two new events, and uninstalls cleanly", async () => {
+    await installClaudeCode(options);
+    const before = await readFile(settingsPath, "utf8");
+    expect((await installClaudeCode(options)).changed).toBe(false);
+    expect(await readFile(settingsPath, "utf8")).toBe(before);
+    const older = JSON.parse(before);
+    delete older.hooks.PermissionRequest;
+    delete older.hooks.SubagentStop;
+    await writeSettings(older);
+    const upgraded = await installClaudeCode(options);
+    expect([...upgraded.summary].sort()).toEqual(["add PermissionRequest hook", "add SubagentStop hook"]);
+    await uninstallClaudeCode(options);
+    expect((await readSettings()).hooks).toBeUndefined();
+  });
+});
+
 describe("remote actions (decide hooks)", () => {
   function options0(): InstallOptions {
     return { homeDir: home, hookCommand: HOOK, decideCommand: DECIDE, dryRun: false, env: {} };
@@ -157,7 +191,7 @@ describe("remote actions (decide hooks)", () => {
   it("does not add them unless asked", async () => {
     await installClaudeCode({ ...options0() });
     const settings = await readSettings();
-    expect(settings.hooks.PermissionRequest).toBeUndefined();
+    expect(JSON.stringify(settings)).not.toContain("decide --tool");
     expect(settings.hooks.PreToolUse).toBeUndefined();
   });
 
@@ -168,7 +202,9 @@ describe("remote actions (decide hooks)", () => {
     expect(result.summary).toContain("add PreToolUse hook (AskUserQuestion)");
     const settings = await readSettings();
     expect(Object.keys(CLAUDE_DECIDE_HOOKS)).toEqual(["PermissionRequest", "PreToolUse"]);
+    // The regular (async) hook that says which agent is asking sits next to the decide hook.
     expect(settings.hooks.PermissionRequest).toEqual([
+      { hooks: [{ type: "command", command: HOOK, async: true, timeout: 10 }] },
       { matcher: "*", hooks: [{ type: "command", command: DECIDE, timeout: 120 }] },
     ]);
     expect(settings.hooks.PreToolUse[0]).toEqual(EXISTING.hooks.PreToolUse[0]);
@@ -177,7 +213,7 @@ describe("remote actions (decide hooks)", () => {
       hooks: [{ type: "command", command: DECIDE, timeout: 120 }],
     });
     // The decide hook waits for an answer, so it must not be async.
-    expect(JSON.stringify(settings.hooks.PermissionRequest)).not.toContain("async");
+    expect(JSON.stringify(settings.hooks.PermissionRequest[1])).not.toContain("async");
   });
 
   it("is idempotent, and a dry run writes nothing", async () => {
@@ -205,7 +241,9 @@ describe("remote actions (decide hooks)", () => {
     const off = await installClaudeCode({ ...options0(), remoteActions: false });
     expect(off.changed).toBe(true);
     const settings = await readSettings();
-    expect(settings.hooks.PermissionRequest).toBeUndefined();
+    expect(settings.hooks.PermissionRequest).toEqual([
+      { hooks: [{ type: "command", command: HOOK, async: true, timeout: 10 }] },
+    ]);
     expect(settings.hooks.PreToolUse).toEqual(EXISTING.hooks.PreToolUse);
     expect(settings.hooks.Stop).toHaveLength(2);
     expect(JSON.stringify(settings)).not.toContain("decide --tool");

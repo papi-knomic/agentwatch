@@ -131,4 +131,68 @@ describe("approval watcher", () => {
     expect(logs[0]).toContain("boom");
     expect(store.get("claude-code:s1")?.status).toBe("needs_input");
   });
+
+  it("leaves a session alone while subagents are active: the new shell may be another agent's", async () => {
+    const { store, twoTicks, status, queried } = setup([child({})]);
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "C:\\projects\\demo",
+      status: "needs_input",
+      agentId: "a0dcb4961017438ab",
+      timestamp: new Date(PROMPT_AT + 5_000).toISOString(),
+    });
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "C:\\projects\\demo",
+      status: "working",
+      agentId: "abc266ed9ab6d4c5b",
+      timestamp: new Date(PROMPT_AT + 6_000).toISOString(),
+    });
+    await twoTicks();
+    expect(status()).toBe("needs_input");
+    expect(queried).toEqual([]);
+    // Once the other subagent has stopped, a single-agent wait is watched as before.
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "C:\\projects\\demo",
+      status: "done",
+      agentId: "abc266ed9ab6d4c5b",
+      timestamp: new Date(PROMPT_AT + 7_000).toISOString(),
+    });
+    expect(store.get("claude-code:s1")?.status).toBe("needs_input");
+  });
+
+  it("does not log a flapping failure again and again, nor 'recovered' for one it never announced", async () => {
+    const store = new SessionStore();
+    store.apply({
+      tool: "claude-code",
+      sessionId: "s1",
+      cwd: "/x",
+      status: "needs_input",
+      pid: 100,
+      timestamp: new Date(PROMPT_AT).toISOString(),
+    });
+    const logs: string[] = [];
+    let failNow = true;
+    let clock = PROMPT_AT;
+    const watcher = createApprovalWatcher({
+      store,
+      listChildren: async () => {
+        if (failNow) throw new Error("process lister timed out after 15s");
+        return [];
+      },
+      now: () => clock,
+      log: (m) => logs.push(m),
+    });
+    for (let i = 0; i < 6; i++) {
+      failNow = i % 2 === 0;
+      clock += 20_000;
+      await watcher.tick();
+    }
+    expect(logs).toHaveLength(2); // the failure once, and its recovery once
+    expect(logs[1]).toContain("recovered");
+  });
 });

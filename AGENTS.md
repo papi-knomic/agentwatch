@@ -66,10 +66,17 @@ interface AgentEvent {
   title?: string;      // task name: tool's session title, or first line of the first prompt (≤ 80 chars); first one sticks
   host?: string;       // where it runs: "VS Code", "Windows Terminal", ... ("VS Code*" enables VS Code click-through)
   inputPending?: boolean; // an unanswered async question; true survives background work, false clears it
+  agentId?: string;    // which agent in the session (Claude Code subagents share the session id); absent = main agent. /^[A-Za-z0-9_-]{1,64}$/, never persisted
   hidden?: boolean;    // internal helper session: suppress dashboard/notifications, including later events
   timestamp: string;   // ISO 8601, set when the hook fires; older events than a session's latest are dropped
 }
 ```
+
+Pending input is tracked per agent inside a session (in memory, in `SessionStore`): the session is `needs_input` while any
+agent waits; a non-`needs_input` event from agent X clears only X (an event with `agentId` and status `done` means that
+subagent finished, not the session); a main-agent `done`/`idle`/`error` or a new prompt (`inputPending: false`) clears
+everyone. `agentId: "unattributed"` (`UNATTRIBUTED_AGENT_ID`) marks a needs_input signal that can't say who asked (a
+Notification); anyone's activity ends it, and it is ignored when an attributed one for the same prompt arrived within 5 s.
 
 Defined in `src/core/types.ts`. Change this format only on purpose: update every adapter and the dashboard in the
 same change.
@@ -179,6 +186,19 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
 - No tool fires a hook on approval; the next event is `PostToolUse`, after the command finishes. For Claude Code,
   `src/server/approval-watch.ts` works around this: while a session is `needs_input`, it polls for a new child shell
   of `CLAUDE_PID` and switches the session to `working`. Codex and Grok expose no pid, so they wait for `PostToolUse`.
+  It skips a session while any subagent is active in it (seen within 10 min, not stopped): the new shell may be
+  another agent's. Process lister (Windows PowerShell worker): output lines are split on LF only (Node's readline also
+  splits on U+2028/2029, which broke the JSON; this is the likely cause of the "Bad control character" errors in the
+  log, not confirmed against a captured command line), control characters are blanked, and a slow worker start isn't
+  counted as a slow request. The cause of the 15 s timeouts was not established (WMI being slow on that machine is the
+  suspect); the same failure is logged at most every 10 minutes.
+- Claude Code subagents share `session_id` (verified by capture, Claude Code 2.1.301, and the hooks docs "Common input
+  fields"): events fired inside a subagent carry `agent_id` and `agent_type`, the main agent's carry neither;
+  `PermissionRequest`, `PreToolUse`, `PostToolUse`, `SubagentStart`, `SubagentStop` do. The installer therefore also
+  adds the regular `hook` on `PermissionRequest` and `SubagentStop` (users must re-run `agentwatch install`; without
+  them the `Notification` still works but can't say which agent asked, and any activity clears it, as before).
+  Not verified: whether `Notification` carries `agent_id`; `AskUserQuestion` asked from a subagent; `PermissionRequest`
+  from a subagent in interactive (non-VS Code) mode.
 - OpenCode: payloads verified by capture (1.19.3 and 2.2.6 TUI). Hooks in via one generated plugin
   (`~/.config/opencode/plugins/agentwatch.js`, on Windows too) whose default export serves both plugin APIs
   (`server` for 1.x, `setup` + `ctx.event.subscribe` for 2.x) and forwards cut-down events to `hook`, tagged `v: 1|2`.
@@ -191,14 +211,26 @@ Before saying work is done, run all four. For a manual end-to-end check, set `AG
   JSON. Resolving (`POST /api/decisions/:id/resolve`) needs the dashboard's `Origin` header, not the token: that blocks
   web pages but not local processes, which can send any `Origin` (see hard rule 3). Pending
   decisions go to the dashboard as SSE `decision` / `decision-remove` events (and `decisions` in `snapshot` and
-  `/api/state`); they are not part of `Session` and never persisted. They are cancelled by a newer non-`needs_input`
-  event for the session (event time more than 1.5s after the request was created; fail-safe, it can also cancel on
-  unrelated later activity), session end, expiry (100s, below `decide`'s 110s deadline), no `wait` request attached
-  for 3s, or no visible dashboard tab for 5s. Presence: each tab sends a random client id on `/api/stream?client=` and
-  `POST /api/presence {clientId, visible}` (on connect, on visibility change, every 20s while visible; a report goes
-  stale after 60s); only a connected and visible tab lets a decision be registered. The hook runs before Claude Code's
-  own question UI, so while a visible tab is open the AskUserQuestion prompt waits for the dashboard (not shown in the
-  terminal) for up to ~100s or until the tab is hidden/closed; `PermissionRequest` may do the same (unverified). An
+  `/api/state`; a short hold becoming a full one is re-sent as `decision`); they are not part of `Session` and never
+  persisted. A decision records the requesting agent (`agentId`, `agentType` for display, from the hook payload). It is
+  cancelled by a newer non-`needs_input` event (event time more than 1.5s after the request was created) from the
+  same agent, by a main-agent turn end or new prompt (any agent), by that subagent's `SubagentStop`, session end,
+  expiry, no `wait` request attached for 3s, or no connected dashboard tab for 5s; other agents' events (e.g. the
+  main agent's `PostToolUse(Agent)` while subagents run) don't cancel it. Presence: each tab sends a random client id on
+  `/api/stream?client=` and `POST /api/presence {clientId, visible}` (on connect, on visibility change, every 20s
+  hidden or not). A tab is "connected" while its event stream is open (hidden tabs' timers are throttled, so reports
+  aren't relied on for that); it is "visible" if it reported visible within 150s. Any connected tab lets a decision be
+  registered; with a visible tab it is held for the full 100s lifetime (below `decide`'s 110s deadline); with only
+  hidden tabs it is held 15s, then cancelled so `decide` prints nothing and Claude Code asks in the terminal; a tab
+  becoming visible extends it to the full lifetime, all tabs hiding shortens it to 15s from then (Chrome on Windows
+  reports covered and minimized windows as hidden, hence this). Phone tabs count only with "Allow approvals". The
+  dashboard shows every pending decision in a sticky "Waiting for you" area (ignores filters and collapsing), puts the
+  count in the tab title and favicon, and, only after the user clicks "Enable browser alerts", shows a browser
+  notification naming the tool and project (never the preview) when a decision arrives while the tab is hidden.
+  `decide` retries registration once after 300ms on `unknown_session` (the regular hook may still be in flight). The
+  hook runs before Claude Code's own question UI, so while a visible tab is open the AskUserQuestion prompt waits for the
+  dashboard (not shown in the terminal) for up to ~100s, or 15s once the tabs are hidden;
+  `PermissionRequest` may do the same (unverified). An
   answer is consumed only once written to a live `wait` response. Multi-select answers are joined with ", " (format
   unverified); questions whose multi-select labels contain a comma are not offered. Payload
   fixtures `permission-request.json` and `pre-tool-use-ask-user-question.json` follow the documented examples, not

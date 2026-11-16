@@ -1,13 +1,15 @@
 import {
   type AgentEvent,
   type AgentStatus,
+  parseAgentId,
   parsePid,
   titleFromPrompt,
   truncateMessage,
   truncateTitle,
+  UNATTRIBUTED_AGENT_ID,
 } from "../../core/types.js";
 import { detectTerminalHost } from "../shared/host.js";
-import { toolActivity } from "../shared/tool-name.js";
+import { formatToolName, toolActivity } from "../shared/tool-name.js";
 import type { NormalizeContext } from "../types.js";
 import { claudeCodeMeta } from "./meta.js";
 import { readAiTitle } from "./title.js";
@@ -33,6 +35,12 @@ export function detectClaudeHost(env: NodeJS.ProcessEnv): string | undefined {
   return detectTerminalHost(env) ?? entrypoint;
 }
 
+function permissionMessage(toolName: string | undefined): string {
+  if (toolName === "AskUserQuestion") return "Claude has a question for you";
+  if (toolName === "ExitPlanMode") return "Claude needs you to approve its plan";
+  return `Claude needs your permission to use ${formatToolName(toolName) ?? "a tool"}`;
+}
+
 function statusFor(
   raw: Record<string, unknown>,
 ): { status: AgentStatus; message?: string | undefined; title?: string | undefined } | null {
@@ -45,6 +53,13 @@ function statusFor(
       return { status: "working", message: toolActivity(str(raw.tool_name)) };
     case "PostToolUseFailure":
       return { status: "working", message: toolActivity(str(raw.tool_name), true) };
+    case "PermissionRequest":
+      // Says which agent is asking (`agent_id`), which a Notification doesn't. Only the tool's name: the input
+      // (a command, file contents) is never read here.
+      return { status: "needs_input", message: permissionMessage(str(raw.tool_name)) };
+    case "SubagentStop":
+      // The subagent finished: the store reads `done` with an agent id as "this agent only".
+      return str(raw.agent_id) ? { status: "done" } : null;
     case "Notification": {
       const type = str(raw.notification_type);
       const message = str(raw.message);
@@ -101,6 +116,13 @@ export function normalizeClaudeCode(raw: unknown, ctx: NormalizeContext): AgentE
     event.titleSource = "tool";
   } else if (mapped.title) {
     event.title = mapped.title;
+  }
+  // Subagents share the session id; their hook payloads carry agent_id (the main agent's carry none).
+  // A Notification may not: then it is only known to be "somebody" until a PermissionRequest says who.
+  const agentId = parseAgentId(record.agent_id);
+  if (agentId) event.agentId = agentId;
+  else if (record.hook_event_name === "Notification" && mapped.status === "needs_input") {
+    event.agentId = UNATTRIBUTED_AGENT_ID;
   }
   const pid = parsePid(ctx.env.CLAUDE_PID);
   if (pid) event.pid = pid;

@@ -8,7 +8,8 @@ import type { ChildProcessInfo, ListChildren } from "./process-list.js";
  */
 
 export const APPROVED_MESSAGE = "Running approved command";
-const ERROR_LOG_INTERVAL_MS = 60_000;
+/** The same failure is logged at most this often: a broken lister fails every poll, and flaps in and out. */
+const ERROR_LOG_INTERVAL_MS = 10 * 60_000;
 
 const SHELLS = new Set(["cmd", "powershell", "pwsh", "bash", "sh", "zsh", "fish", "dash"]);
 
@@ -37,19 +38,30 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
   // Candidate shells seen on the previous tick, per session. A command must be seen twice in a row, so a
   // short-lived hook from some other tool firing with the prompt doesn't count as an approval.
   let seen = new Map<string, Set<number>>();
-  // A failing lister would otherwise log every interval; say it once a minute, and say when it recovers.
-  let lastError: { message: string; loggedAt: number } | undefined;
+  // A failing lister would otherwise log every interval (and every flap). Say a given failure once in a while,
+  // and "recovered" only for a failure that was actually announced.
+  let lastLogged: { message: string; loggedAt: number } | undefined;
+  let failing = false;
+  let announced = false;
 
   function reportFailure(error: unknown): void {
     const message = (error instanceof Error ? error.message : String(error)).split(/\r?\n/)[0] ?? "";
-    if (lastError?.message === message && now() - lastError.loggedAt < ERROR_LOG_INTERVAL_MS) return;
+    failing = true;
+    if (lastLogged?.message === message && now() - lastLogged.loggedAt < ERROR_LOG_INTERVAL_MS) return;
     log?.(`Approval watch failed (retrying every ${intervalMs / 1000}s): ${message}`);
-    lastError = { message, loggedAt: now() };
+    lastLogged = { message, loggedAt: now() };
+    announced = true;
   }
 
   async function tick(): Promise<void> {
     if (running) return;
-    const waiting = store.list().filter((s) => s.status === "needs_input" && s.pid !== undefined);
+    // Several agents in one session (subagents) can't be told apart by their shells: a command that started may
+    // be another agent's, so the session stays as it is until that agent's own event arrives.
+    const waiting = store
+      .list()
+      .filter(
+        (s) => s.status === "needs_input" && s.pid !== undefined && store.activeSubagents(s.key, now()) === 0,
+      );
     if (waiting.length === 0) {
       seen = new Map();
       return;
@@ -58,9 +70,10 @@ export function createApprovalWatcher(options: ApprovalWatcherOptions): {
     try {
       const pids = [...new Set(waiting.map((s) => s.pid as number))];
       const children = (await listChildren(pids)).filter(isApprovedCommand);
-      if (lastError) {
-        log?.("Approval watch recovered.");
-        lastError = undefined;
+      if (failing) {
+        if (announced) log?.("Approval watch recovered.");
+        failing = false;
+        announced = false;
       }
       const nextSeen = new Map<string, Set<number>>();
       for (const session of waiting) {

@@ -139,20 +139,28 @@ agentwatch install --tool claude-code --remote-actions     # or: agentwatch setu
 agentwatch install --tool claude-code --no-remote-actions  # turn it off again (uninstall turns it off too)
 ```
 
-This adds two hooks to `~/.claude/settings.json` (backed up first, removed by `uninstall`): `PermissionRequest`
-(matcher `*`) and `PreToolUse` (matcher `AskUserQuestion`), both running `agentwatch decide --tool claude-code` with a
+This adds two hooks to `~/.claude/settings.json` (backed up first, removed by `uninstall`; besides the status hooks that
+every install adds): `PermissionRequest` (matcher `*`) and `PreToolUse` (matcher `AskUserQuestion`), both running `agentwatch decide --tool claude-code` with a
 120 second timeout, and sets `"remoteActions": true` in `~/.agentwatch/config.json`. Start a new Claude Code session
 afterwards.
 
 How it behaves:
 
-- It only waits while a dashboard tab is open **and visible** (each tab reports this; a hidden tab or a closed one does
-  not count). With no visible tab, the server down or the setting off, the hook exits silently at once and Claude Code
-  asks you as usual.
+- It only waits while a dashboard tab is open. With no tab open, the server down or the setting off, the hook exits
+  silently at once and Claude Code asks you as usual.
 - **While a visible tab is open, Claude Code's question waits for the dashboard: it is not shown in the terminal
   meanwhile.** (The hook runs before Claude Code's own question UI.) That lasts until you answer, for up to about
-  100 seconds, or until you hide or close the tab (the question then appears in the terminal after a few seconds).
+  100 seconds. If the tab is open but hidden (behind another window, minimized, or in a background tab; Chrome treats
+  all of those as hidden) the wait is only 15 seconds, then the question appears in the terminal. Bring the tab
+  forward in that time and the full wait applies again.
   Permission prompts may behave the same way; that is not verified.
+- A pinned **Waiting for you** area at the top of the dashboard shows every pending prompt, whatever the agent filter or
+  collapsed folders. The tab title and icon show how many are waiting. Click **Enable browser alerts** there (once; it
+  asks the browser for permission) to also get a browser notification when one arrives while the tab is hidden; it
+  names only the agent and project, never the command.
+- With subagents, the card says which one is asking. One agent's activity no longer clears another's pending prompt.
+  For that, run `agentwatch install --tool claude-code` once more: it adds the `PermissionRequest` and `SubagentStop`
+  status hooks (nothing else changes).
 - If the answer was given elsewhere (a session that moved on, for instance), the card clears.
 - If nobody answers within about 100 seconds, the hook gives up and Claude Code's own prompt appears.
 - Only a short gap is tolerated: if the waiting hook disappears, the card is withdrawn after a few seconds so you

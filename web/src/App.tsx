@@ -16,7 +16,6 @@ import {
   statusDuration,
   statusSince,
 } from "./board";
-import { DecisionPanel } from "./DecisionPanel";
 import { NotPaired, PairPage } from "./PairPage";
 import { type Me, pairCodeFromHash, useMe, useUnpairedWatch } from "./remote";
 import { SetupPanel } from "./SetupPanel";
@@ -25,11 +24,11 @@ import {
   type Connection,
   dismissSession,
   openSession,
-  type PendingDecision,
   type Session,
   type ToolInfo,
   useAgentStream,
 } from "./useAgentStream";
+import { useDecisionAlerts, WaitingPanel } from "./WaitingPanel";
 
 const STATUS_LABEL: Record<Status, string> = {
   needs_input: "Needs input",
@@ -129,22 +128,22 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
   const showTool = agents.length > 1;
   const count = (status: Status) => sessions.filter((s) => s.status === status).length;
 
-  useEffect(() => {
-    document.title = allAttention > 0 ? `(${allAttention}) ${APP_DISPLAY_NAME}` : APP_DISPLAY_NAME;
-  }, [allAttention]);
+  const sessionByKey = useMemo(() => new Map(sessions.map((s) => [s.key, s])), [sessions]);
+  const alerts = useDecisionAlerts(decisions, allAttention, (decision) => {
+    const session = sessionByKey.get(decision.sessionKey);
+    return {
+      tool: (session && toolById.get(session.tool)?.label) ?? session?.tool ?? "An agent",
+      project: session ? projectName(session.cwd) : undefined,
+    };
+  });
 
   // Forget the filter once that agent's sessions are gone, so its next session doesn't silently hide the rest.
   useEffect(() => {
     if (connection === "live" && storedAgent !== null && agent === null) setAgent(null);
   }, [connection, storedAgent, agent, setAgent]);
 
-  const decisionsBySession = useMemo(() => {
-    const map = new Map<string, PendingDecision[]>();
-    for (const d of decisions) map.set(d.sessionKey, [...(map.get(d.sessionKey) ?? []), d]);
-    return map;
-  }, [decisions]);
   const canAnswer = !me.remote || me.device.allowApprovals;
-  const rowProps = { toolById, showTool, now, decisionsBySession, remote, canAnswer };
+  const rowProps = { toolById, showTool, now, remote };
 
   return (
     <div className="app">
@@ -172,6 +171,15 @@ function Dashboard({ me, onUnpaired }: { me: Me; onUnpaired: () => void }) {
           <ConnectionBadge connection={connection} />
         </div>
       </header>
+
+      <WaitingPanel
+        decisions={decisions}
+        sessions={sessions}
+        toolById={toolById}
+        canAnswer={canAnswer}
+        permission={alerts.permission}
+        onEnableAlerts={alerts.enable}
+      />
 
       <main className="content">
         {sessions.length === 0 ? (
@@ -316,12 +324,8 @@ interface RowContext {
   toolById: Map<string, ToolInfo>;
   showTool: boolean;
   now: number;
-  /** Pending permission prompts and questions the dashboard can answer, by session key. */
-  decisionsBySession: Map<string, PendingDecision[]>;
   /** Viewed from a paired phone: no actions that open apps on the PC. */
   remote: boolean;
-  /** This viewer may approve prompts and answer questions. */
-  canAnswer: boolean;
 }
 
 /** Collapsed project folders, remembered per browser by project key. */
@@ -471,9 +475,7 @@ function SessionRow({
   showTool,
   showProject,
   now,
-  decisionsBySession,
   remote,
-  canAnswer,
 }: { session: Session; showProject: boolean } & RowContext) {
   const tool = toolById.get(session.tool);
   const project = projectName(session.cwd);
@@ -548,9 +550,6 @@ function SessionRow({
           </svg>
         </button>
       </div>
-      {decisionsBySession.get(session.key)?.map((decision) => (
-        <DecisionPanel key={decision.id} decision={decision} canAnswer={canAnswer} />
-      ))}
     </li>
   );
 }

@@ -6,7 +6,7 @@ import { APP_NAME, MAX_EVENT_BODY_BYTES } from "../core/constants.js";
 import { parseQuestions, truncate } from "../core/decision-types.js";
 import { applyPhoneUpdate, type PhoneConfig, publicPhone } from "../core/phone.js";
 import type { SessionStore, StoreChange } from "../core/store.js";
-import { parseAgentEvent, type Session, sessionKey } from "../core/types.js";
+import { parseAgentEvent, parseAgentId, type Session, sessionKey } from "../core/types.js";
 import { DecisionStore } from "./decisions.js";
 import {
   cleanDeviceName,
@@ -61,10 +61,15 @@ export interface AppServerOptions {
 const SSE_HEARTBEAT_MS = 25_000;
 /** The longest a single decision long-poll may hold a request open. */
 const MAX_WAIT_MS = 30_000;
-/** Dashboards re-announce that they are visible this often; a viewer not heard from for PRESENCE_TTL_MS is not. */
-const PRESENCE_TTL_MS = 60_000;
-/** With nothing pending being looked at for this long, pending decisions are cancelled so the terminal prompt shows. */
+/**
+ * A tab that last said "visible" longer ago than this no longer counts as visible. Generous on purpose: a hidden tab's
+ * timers are throttled to about once a minute, and a visible one re-announces every 20 s.
+ */
+const PRESENCE_TTL_MS = 150_000;
+/** With no dashboard connected for this long, pending decisions are cancelled so the terminal prompt shows. */
 const NO_VIEWER_GRACE_MS = 5_000;
+/** Display-only (e.g. "general-purpose"); anything else is dropped rather than shown. */
+const AGENT_TYPE = /^[\w .:-]{1,64}$/;
 const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const DEVICE_PATH = /^\/api\/devices\/([A-Za-z0-9_-]{8,32})$/;
 const DECISION_PATH = /^\/api\/decisions\/([A-Za-z0-9_-]{1,64})\/(wait|resolve)$/;
@@ -123,7 +128,9 @@ export function createAppServer(options: AppServerOptions): Server {
   const { config, store } = options;
   const decisions = options.decisions ?? new DecisionStore();
   // Dashboard tabs, by the random id each generates. Claude Code's own prompt can be held back while we wait for an
-  // answer (the hook runs before the prompt), so a decision is only taken when a tab is connected AND visible.
+  // answer (the hook runs before the prompt), so a decision is only taken when a tab is connected. A visible tab
+  // holds it for the full lifetime; tabs that are only open in the background hold it briefly (their alerts may
+  // still bring the user over). Chrome reports covered and minimized windows as hidden, so hidden is common.
   const viewers = new Map<
     string,
     { streams: Set<ServerResponse>; visibleAt: number | null; deviceId?: string }
@@ -140,21 +147,44 @@ export function createAppServer(options: AppServerOptions): Server {
   const graceMs = options.presence?.graceMs ?? NO_VIEWER_GRACE_MS;
   let noViewerSince: number | null = null;
 
+  /** A phone that can't answer prompts must not hold them back from the terminal. */
+  function canHold(viewer: { deviceId?: string }): boolean {
+    return viewer.deviceId === undefined || devices.get(viewer.deviceId)?.allowApprovals === true;
+  }
+
+  /** An open event stream is the connection; hidden tabs can't be relied on to send timely presence reports. */
+  function hasConnectedViewer(): boolean {
+    for (const viewer of viewers.values()) {
+      if (viewer.streams.size > 0 && canHold(viewer)) return true;
+    }
+    return false;
+  }
+
   function hasVisibleViewer(): boolean {
     const now = Date.now();
     for (const viewer of viewers.values()) {
       if (viewer.streams.size > 0 && viewer.visibleAt !== null && now - viewer.visibleAt < presenceTtlMs) {
-        // A phone that can't answer prompts must not hold them back from the terminal.
-        if (viewer.deviceId === undefined || devices.get(viewer.deviceId)?.allowApprovals) return true;
+        if (canHold(viewer)) return true;
       }
     }
     return false;
   }
 
-  // Nobody looking any more while a question or prompt is pending: let the terminal show it instead.
+  // Keeps pending decisions in step with who is looking: visible → full lifetime, only background tabs → short
+  // hold, nobody connected for a moment → give the prompt back to the terminal.
   function checkViewers(): void {
-    if (decisions.list().length === 0 || hasVisibleViewer()) {
+    if (decisions.list().length === 0) {
       noViewerSince = null;
+      return;
+    }
+    if (hasVisibleViewer()) {
+      noViewerSince = null;
+      decisions.extendShortHolds();
+      return;
+    }
+    if (hasConnectedViewer()) {
+      noViewerSince = null;
+      decisions.shortenFullHolds();
       return;
     }
     const now = Date.now();
@@ -562,7 +592,7 @@ export function createAppServer(options: AppServerOptions): Server {
 
     // Nothing to wait for: the caller falls back to Claude Code's own prompt straight away.
     if (config.remoteActions !== true) return sendJson(res, 200, { id: null, reason: "disabled" });
-    if (!hasVisibleViewer()) return sendJson(res, 200, { id: null, reason: "no_viewer" });
+    if (!hasConnectedViewer()) return sendJson(res, 200, { id: null, reason: "no_viewer" });
     const key = sessionKey(tool, sessionId);
     if (!store.get(key)) return sendJson(res, 200, { id: null, reason: "unknown_session" });
 
@@ -570,6 +600,12 @@ export function createAppServer(options: AppServerOptions): Server {
       sessionKey: key,
       kind,
       toolName: truncate(toolName, 100),
+      agentId: parseAgentId(record.agentId),
+      agentType:
+        typeof record.agentType === "string" && AGENT_TYPE.test(record.agentType)
+          ? record.agentType
+          : undefined,
+      hold: hasVisibleViewer() ? "full" : "short",
       preview: typeof preview === "string" ? preview : undefined,
       questions: questions ?? undefined,
     });
@@ -662,7 +698,7 @@ export function createAppServer(options: AppServerOptions): Server {
       else send("remove", { key: change.key });
     });
     const unsubscribeDecisions = decisions.subscribe((change) => {
-      if (change.type === "add") send("decision", change.decision);
+      if (change.type === "add" || change.type === "update") send("decision", change.decision);
       else send("decision-remove", { id: change.id });
     });
     const heartbeat = setInterval(() => res.write(": ping\n\n"), SSE_HEARTBEAT_MS);

@@ -15,13 +15,28 @@ front ends that read `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.
 | `SessionStart` | `idle` | |
 | `UserPromptSubmit` | `working` | The prompt text is never read or stored. |
 | `PostToolUse`, `PostToolUseFailure` | `working` | Moves a session back to working after a permission prompt is answered. |
+| `PermissionRequest` | `needs_input` | Says which agent is asking (`agent_id`, present only inside subagents). Only the tool's name is read, never the input. A `Notification` for the same prompt within 5 s is then ignored. |
+| `SubagentStop` | `done` + `agentId` | Clears only that subagent; the session itself doesn't change. |
 | `Notification` | `needs_input` | Only for `notification_type` `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input`. Everything else (e.g. `idle_prompt`) is ignored. |
 | `Stop` | `done` | `last_assistant_message` is never read or stored. |
 | `StopFailure` | `error` | Message is the error type and details, e.g. `rate_limit: 429 Too Many Requests`. |
 | `SessionEnd` | `ended` | Removes the session from the dashboard. |
 
 Our entries are identified by the `hook --tool claude-code` part of the command, so `uninstall` removes exactly those
-and leaves the rest of the file alone.
+and leaves the rest of the file alone. `PermissionRequest` and `SubagentStop` were added after 0.1.4: re-run
+`agentwatch install --tool claude-code` once to get them (it only adds what is missing). Without them everything still
+works, but a permission wait can't be told apart per agent.
+
+### Subagents
+
+All agents of one task share `session_id`. Payloads of events fired inside a subagent carry `agent_id` (e.g.
+`a0dcb4961017438ab`) and `agent_type` (e.g. `general-purpose`); the main agent's carry neither (hooks docs "Common input
+fields"; verified by capture with Claude Code 2.1.301 in VS Code, fixtures `subagent-permission-request.json`,
+`subagent-post-tool-use.json`, `subagent-stop.json`, derived from it). `PermissionRequest` has no `tool_use_id`. We keep
+pending input per agent: the session stays `needs_input` while any agent waits, one agent's activity clears only that
+agent, `SubagentStop`, a main-agent `Stop` or a new prompt clear as described in AGENTS.md. Not verified: whether
+`Notification` carries `agent_id` (if not, it is treated as "unattributed" and any activity clears it), `AskUserQuestion`
+asked from a subagent, and `PermissionRequest` from subagents in the interactive terminal UI.
 
 ## Answering from the dashboard (opt-in `decide` hooks)
 
@@ -55,17 +70,22 @@ Output (stdout, exit 0), from the [hooks docs](https://code.claude.com/docs/en/h
 
 **Waiting replaces the terminal prompt.** `PreToolUse` runs before the tool, so Claude Code's own question UI does not
 appear until `decide` returns: while a visible dashboard tab is open, the question waits for the dashboard (it is NOT
-shown in the terminal meanwhile) for up to about 100 s or until the tab is hidden or closed (then within a few seconds).
-`PermissionRequest` may behave the same; that is not verified (third-party reports say the dialog stays, but don't
-rely on it). Only a connected, visible tab counts (the dashboard reports `document.visibilityState` to
-`POST /api/presence`), so a forgotten background tab does not hold anything up. Not supported through hooks: sending new prompts or starting plans (only Claude Code Channels,
+shown in the terminal meanwhile) for up to about 100 s. If the dashboard is open but only in the background (Chrome
+reports a covered or minimized window as hidden too), the prompt is held 15 s and then Claude Code asks in the
+terminal; the dashboard's "Waiting for you" area, tab title, favicon badge and optional browser notification are there
+to pull you over in that time, and a tab becoming visible extends the hold. With no dashboard connected, no wait at
+all. `PermissionRequest` may behave the same; that is not verified (third-party reports say the dialog stays, but
+don't rely on it). The dashboard reports `document.visibilityState` to `POST /api/presence`; an open event stream is
+what counts as connected. Not supported through hooks: sending new prompts or starting plans (only Claude Code Channels,
 a research preview, can do that). Free-text "Other" answers aren't offered. Codex's `PermissionRequest` uses the same
 format (future work); Grok hooks can only deny, so Grok is unsupported.
 
-Known gaps of the decision cancel: a pending decision is cancelled when the session reports any newer event that is not
-`needs_input` (more than 1.5 s after the request, by event time). That is deliberately fail-safe, since a terminal answer
-is only visible as later activity, but it can also withdraw a card because of unrelated activity (a background task or
-subagent finishing). The terminal prompt is unaffected; only the dashboard card is lost.
+Known gaps of the decision cancel: a pending decision is cancelled when the same agent reports a newer event that is not
+`needs_input` (more than 1.5 s after the request, by event time), or the main agent's turn ends. That is deliberately
+fail-safe, since a terminal answer is only visible as later activity, but it can still withdraw a card because of
+unrelated activity of that agent (a background task finishing). Other subagents' events don't count. If the regular
+hook hasn't told the server about the session yet, `decide` retries registration once after 300 ms. The terminal prompt
+is unaffected; only the dashboard card is lost.
 
 ## Where the session runs (`host`)
 

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+  DECISION_SHORT_HOLD_MS,
   DECISION_TTL_MS,
   type DecisionKind,
   type DecisionQuestion,
@@ -12,13 +13,18 @@ import {
   validateAnswers,
 } from "../core/decision-types.js";
 import type { StoreChange } from "../core/store.js";
+import { MAIN_AGENT_KEY } from "../core/types.js";
 
 /**
  * Pending permission prompts and questions, kept in memory only (never in the session file): a command preview can
  * contain anything, and it is only worth showing while Claude is actually waiting.
  */
 
-export type DecisionChange = { type: "add"; decision: PendingDecision } | { type: "remove"; id: string };
+export type DecisionChange =
+  | { type: "add"; decision: PendingDecision }
+  /** Same decision, new expiry (a short hold became a full one). */
+  | { type: "update"; decision: PendingDecision }
+  | { type: "remove"; id: string };
 
 export type WaitResult =
   | { type: "resolved"; resolution: Resolution }
@@ -32,6 +38,8 @@ export type CreateResult = { id: string } | { id: null; reason: "session_cap" | 
 
 export interface DecisionStoreOptions {
   ttlMs?: number;
+  /** Lifetime of a decision created with `hold: "short"` (only hidden tabs to show it to). */
+  shortHoldMs?: number;
   maxPerSession?: number;
   maxTotal?: number;
   now?: () => number;
@@ -46,6 +54,11 @@ export interface NewDecision {
   sessionKey: string;
   kind: DecisionKind;
   toolName: string;
+  /** The subagent asking; undefined: the main agent. */
+  agentId?: string | undefined;
+  agentType?: string | undefined;
+  /** "short": nobody is looking at the dashboard right now, so only wait briefly (see `extendShortHolds`). */
+  hold?: "full" | "short" | undefined;
   preview?: string | undefined;
   questions?: DecisionQuestion[] | undefined;
 }
@@ -53,6 +66,9 @@ export interface NewDecision {
 interface Entry {
   decision: PendingDecision;
   createdMs: number;
+  /** Which agent of the session asked (`main` when none). */
+  agentKey: string;
+  short: boolean;
   resolution?: Resolution;
   timer: NodeJS.Timeout;
   orphan?: NodeJS.Timeout;
@@ -73,6 +89,7 @@ export class DecisionStore {
   readonly #closed = new Set<string>();
   readonly #listeners = new Set<(change: DecisionChange) => void>();
   readonly #ttlMs: number;
+  readonly #shortHoldMs: number;
   readonly #maxPerSession: number;
   readonly #maxTotal: number;
   readonly #now: () => number;
@@ -80,6 +97,7 @@ export class DecisionStore {
 
   constructor(options: DecisionStoreOptions = {}) {
     this.#ttlMs = options.ttlMs ?? DECISION_TTL_MS;
+    this.#shortHoldMs = Math.min(options.shortHoldMs ?? DECISION_SHORT_HOLD_MS, this.#ttlMs);
     this.#maxPerSession = options.maxPerSession ?? 5;
     this.#maxTotal = options.maxTotal ?? 50;
     this.#now = options.now ?? Date.now;
@@ -106,22 +124,35 @@ export class DecisionStore {
 
     const id = randomBytes(18).toString("base64url");
     const createdMs = this.#now();
+    const short = input.hold === "short";
+    const lifetime = short ? this.#shortHoldMs : this.#ttlMs;
     const decision: PendingDecision = {
       id,
       sessionKey: input.sessionKey,
       kind: input.kind,
       toolName: truncate(input.toolName, 100),
       createdAt: new Date(createdMs).toISOString(),
-      expiresAt: new Date(createdMs + this.#ttlMs).toISOString(),
+      expiresAt: new Date(createdMs + lifetime).toISOString(),
     };
+    if (input.agentId) {
+      decision.agentId = input.agentId;
+      if (input.agentType) decision.agentType = truncate(input.agentType, 64);
+    }
     if (input.preview) {
       decision.preview = truncate(input.preview, input.kind === "plan" ? PLAN_PREVIEW_MAX : PREVIEW_MAX);
     }
     if (input.kind === "question" && input.questions) decision.questions = input.questions;
     // unref: a pending prompt must not keep the process alive.
-    const timer = setTimeout(() => this.#close(id, { type: "gone" }), this.#ttlMs);
+    const timer = setTimeout(() => this.#close(id, { type: "gone" }), lifetime);
     timer.unref();
-    const entry: Entry = { decision, createdMs, timer, waiters: new Set() };
+    const entry: Entry = {
+      decision,
+      createdMs,
+      agentKey: input.agentId ?? MAIN_AGENT_KEY,
+      short,
+      timer,
+      waiters: new Set(),
+    };
     this.#entries.set(id, entry);
     this.#armOrphan(id, entry);
     this.#emit({ type: "add", decision });
@@ -207,21 +238,53 @@ export class DecisionStore {
     }
   }
 
+  /** Nobody is looking any more (tabs hidden): full holds shrink to the short hold, counted from now. */
+  shortenFullHolds(): void {
+    const now = this.#now();
+    for (const [id, entry] of this.#entries) {
+      if (entry.short || entry.resolution) continue;
+      entry.short = true;
+      const remaining = Math.max(Math.min(entry.createdMs + this.#ttlMs - now, this.#shortHoldMs), 1);
+      this.#rearm(id, entry, remaining, now);
+    }
+  }
+
+  #rearm(id: string, entry: Entry, remaining: number, now: number): void {
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => this.#close(id, { type: "gone" }), remaining);
+    entry.timer.unref();
+    entry.decision = { ...entry.decision, expiresAt: new Date(now + remaining).toISOString() };
+    this.#emit({ type: "update", decision: entry.decision });
+  }
+
+  /** A tab became visible: decisions that were only held briefly get their full lifetime. */
+  extendShortHolds(): void {
+    const now = this.#now();
+    for (const [id, entry] of this.#entries) {
+      if (!entry.short || entry.resolution) continue;
+      entry.short = false;
+      this.#rearm(id, entry, Math.max(entry.createdMs + this.#ttlMs - now, 1), now);
+    }
+  }
+
   /**
-   * Cancels a session's pending decisions when it moves on without us: the user answered in the terminal (or the
-   * app), so Claude is already working again. Waiting for input again (the permission prompt's own notification)
-   * is not moving on.
+   * Cancels pending decisions when the agent that asked moves on without us: the user answered in the terminal (or
+   * the app), so that agent is already working again. Other agents of the same session don't count (subagents
+   * share the session id), unless the whole turn is over. Waiting for input again (the permission prompt's own
+   * notification) is not moving on.
    */
   handleSessionChange(change: StoreChange): void {
     if (change.type === "remove") {
       this.cancelSession(change.key);
       return;
     }
-    const { session } = change;
-    if (session.status === "needs_input") return;
+    const { session, source } = change;
+    // Changes that don't say which event caused them: any non-waiting session status is "moved on" (older callers).
+    if (source ? source.status === "needs_input" : session.status === "needs_input") return;
     const updated = Date.parse(session.updatedAt);
     for (const [id, entry] of this.#entries) {
       if (entry.decision.sessionKey !== session.key || entry.resolution) continue;
+      if (source && !source.clearsAll && source.agentKey !== entry.agentKey) continue;
       if (updated > entry.createdMs + CANCEL_GRACE_MS) this.#close(id, { type: "gone" });
     }
   }

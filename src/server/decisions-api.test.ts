@@ -17,7 +17,7 @@ let streams: { close: () => void }[];
 
 beforeEach(async () => {
   store = new SessionStore();
-  decisions = new DecisionStore({ ttlMs: 60_000 });
+  decisions = new DecisionStore({ ttlMs: 60_000, shortHoldMs: 300 });
   streams = [];
   config = {
     port: 0,
@@ -163,18 +163,55 @@ describe("who counts as a viewer", () => {
     expect(JSON.parse(res.body)).toEqual({ id: null, reason: "no_viewer" });
   });
 
-  it("only counts a tab that is connected and visible", async () => {
+  it("takes a decision from any connected tab, visible or not, and from none otherwise", async () => {
     await startSession();
     const post = async () =>
       JSON.parse((await send("POST", "/api/decisions", { headers: auth, body: permissionBody })).body);
+    expect(await post()).toEqual({ id: null, reason: "no_viewer" });
     const background = await openDashboard(false);
-    expect(await post()).toEqual({ id: null, reason: "no_viewer" });
-
-    expect(await background.setVisible(true)).toBe(200);
     expect((await post()).id).toEqual(expect.any(String));
-
-    expect(await background.setVisible(false)).toBe(200);
+    background.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(await post()).toEqual({ id: null, reason: "no_viewer" });
+  });
+
+  it("holds a decision for the full lifetime with a visible tab, and only briefly with background tabs", async () => {
+    await startSession();
+    const lifetime = (id: string) => {
+      const found = decisions.list().find((d) => d.id === id);
+      return Date.parse(found?.expiresAt ?? "") - Date.parse(found?.createdAt ?? "");
+    };
+    const background = await openDashboard(false);
+    const short = await register();
+    expect(lifetime(short)).toBe(300);
+    // Over after the short hold: the hook then prints nothing and Claude Code shows its own prompt.
+    const res = await send("GET", `/api/decisions/${short}/wait?ms=5000`, { headers: auth });
+    expect(res.status).toBe(410);
+
+    await background.setVisible(true);
+    expect(lifetime(await register())).toBe(60_000);
+  });
+
+  it("extends a short hold when a tab becomes visible, and shortens a full one when it hides", async () => {
+    await startSession();
+    const background = await openDashboard(false);
+    const id = await register();
+    await background.setVisible(true);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(decisions.list().map((d) => d.id)).toEqual([id]);
+
+    await background.setVisible(false);
+    const res = await send("GET", `/api/decisions/${id}/wait?ms=5000`, { headers: auth });
+    expect(res.status).toBe(410);
+  });
+
+  it("tells the dashboard when a short hold becomes a full one", async () => {
+    await startSession();
+    const background = await openDashboard(false);
+    await register();
+    await background.setVisible(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(background.events.filter((e) => e === "decision").length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not count a stream without a client id, or a presence report for a stream that is gone", async () => {
@@ -212,14 +249,14 @@ describe("who counts as a viewer", () => {
     expect((await send("POST", "/api/presence", { headers: auth, body })).status).toBe(200);
   });
 
-  it("cancels a pending decision after a short grace once no tab is visible, so the terminal prompt appears", async () => {
+  it("cancels a pending decision after a short grace once no tab is connected, so the terminal prompt appears", async () => {
     await startSession();
     const dashboard = await openDashboard();
     const id = await register();
     const started = Date.now();
     const waiting = send("GET", `/api/decisions/${id}/wait?ms=5000`, { headers: auth });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    await dashboard.setVisible(false);
+    dashboard.close();
     const res = await waiting;
     expect(res.status).toBe(410);
     expect(Date.now() - started).toBeLessThan(2000);

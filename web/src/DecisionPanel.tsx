@@ -6,14 +6,15 @@ type Phase = "idle" | "sending" | ResolveOutcome;
 
 const OUTCOME_NOTE: Partial<Record<Phase, string>> = {
   answered: "Already answered.",
-  gone: "This request is over: it timed out, no dashboard tab was visible, or it was answered elsewhere.",
+  gone: "This request is over: it timed out, the dashboard was disconnected, or it was answered elsewhere.",
   failed: "Couldn't send that. Try again, or answer in the terminal.",
 };
 
 /**
  * A pending permission prompt or question for one session (opt-in "remote actions"). The answer goes to the local
  * server, which hands it to the waiting hook. While a visible tab is open, Claude Code waits for this panel (its own
- * prompt is not shown in the terminal meanwhile) for up to about 100 s, or until the tab is hidden or closed.
+ * prompt is not shown in the terminal meanwhile) for up to about 100 s; with only hidden tabs, for 15 s; with none, not
+ * at all.
  */
 export function DecisionPanel({
   decision,

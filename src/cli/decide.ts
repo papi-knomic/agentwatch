@@ -10,6 +10,7 @@ import {
   previewFor,
   type Resolution,
 } from "../core/decision-types.js";
+import { parseAgentId } from "../core/types.js";
 
 /**
  * `agentwatch decide --tool claude-code`: the opt-in hook behind answering from the dashboard.
@@ -17,9 +18,9 @@ import {
  * Unlike `hook`, this one may print to stdout and may take a while, because that is the whole point: it holds a
  * permission prompt (or AskUserQuestion) open until the dashboard answers. Everything else is still the same
  * contract: always exit 0, never throw, and print nothing at all unless a decision was made. Silence makes Claude
- * Code carry on exactly as if the hook did not exist. It never waits unless a visible dashboard tab is open to
+ * Code carry on exactly as if the hook did not exist. It never waits unless a dashboard tab is connected to
  * answer; while it waits, Claude Code's own prompt is held back (the hook runs first), so the server cancels the
- * decision as soon as no tab is visible and this hook then returns.
+ * decision (briefly if the tabs are only in the background) and this hook then returns.
  */
 
 /**
@@ -35,6 +36,7 @@ const STDIN_TIMEOUT_MS = 1_000;
 /** After this many failed polls in a row the server is gone; stop holding the prompt. */
 const MAX_POLL_FAILURES = 2;
 const RETRY_PAUSE_MS = 500;
+const UNKNOWN_SESSION_RETRY_MS = 300;
 
 export interface DecideDeps {
   readStdin: () => Promise<string>;
@@ -54,9 +56,29 @@ interface Parsed {
   toolName: string;
   toolInput: Record<string, unknown>;
   questions?: DecisionQuestion[];
+  /** Set when a subagent is asking (Claude Code includes agent_id/agent_type only inside subagents). */
+  agentId?: string;
+  agentType?: string;
+}
+
+function withAgent(parsed: Parsed, record: Record<string, unknown>): Parsed {
+  const agentId = parseAgentId(record.agent_id);
+  if (!agentId) return parsed;
+  const agentType = record.agent_type;
+  return {
+    ...parsed,
+    agentId,
+    ...(typeof agentType === "string" && agentType !== "" ? { agentType: agentType.slice(0, 64) } : {}),
+  };
 }
 
 function parsePayload(text: string): Parsed | null {
+  const parsed = parseBasics(text);
+  if (!parsed) return null;
+  return withAgent(parsed.value, parsed.record);
+}
+
+function parseBasics(text: string): { value: Parsed; record: Record<string, unknown> } | null {
   let raw: unknown;
   try {
     raw = JSON.parse(text.replace(/^﻿/, ""));
@@ -78,15 +100,20 @@ function parsePayload(text: string): Parsed | null {
     if (toolName === "AskUserQuestion") return null;
     // The plan gets its own card (plan text, feedback box) rather than a generic "Allow ExitPlanMode?".
     return {
-      kind: toolName === "ExitPlanMode" ? "plan" : "permission",
-      sessionId,
-      toolName,
-      toolInput: input,
+      value: {
+        kind: toolName === "ExitPlanMode" ? "plan" : "permission",
+        sessionId,
+        toolName,
+        toolInput: input,
+      },
+      record,
     };
   }
   if (record.hook_event_name === "PreToolUse" && toolName === "AskUserQuestion") {
     const questions = parseQuestions(input.questions);
-    return questions ? { kind: "question", sessionId, toolName, toolInput: input, questions } : null;
+    return questions
+      ? { value: { kind: "question", sessionId, toolName, toolInput: input, questions }, record }
+      : null;
   }
   return null;
 }
@@ -149,22 +176,32 @@ export async function runDecide(toolId: string | undefined, deps: DecideDeps): P
     const base = `http://127.0.0.1:${config.port}`;
     const headers = { "content-type": "application/json", authorization: `Bearer ${config.token}` };
 
-    const registered = await deps.fetch(`${base}/api/decisions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        tool: toolId,
-        sessionId: parsed.sessionId,
-        kind: parsed.kind,
-        toolName: parsed.toolName,
-        ...(parsed.kind !== "question"
-          ? { preview: previewFor(parsed.toolName, parsed.toolInput) }
-          : { questions: parsed.questions }),
-      }),
-      signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
+    const body = JSON.stringify({
+      tool: toolId,
+      sessionId: parsed.sessionId,
+      kind: parsed.kind,
+      toolName: parsed.toolName,
+      ...(parsed.agentId ? { agentId: parsed.agentId, agentType: parsed.agentType } : {}),
+      ...(parsed.kind !== "question"
+        ? { preview: previewFor(parsed.toolName, parsed.toolInput) }
+        : { questions: parsed.questions }),
     });
-    if (!registered.ok) return;
-    const { id } = (await registered.json()) as { id?: unknown };
+    const register = async (): Promise<{ id?: unknown; reason?: unknown } | null> => {
+      const response = await deps.fetch(`${base}/api/decisions`, {
+        method: "POST",
+        headers,
+        body,
+        signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
+      });
+      return response.ok ? ((await response.json()) as { id?: unknown; reason?: unknown }) : null;
+    };
+    let registered = await register();
+    // The regular hook that tells the server about this session runs in parallel and may not have landed yet.
+    if (registered?.id == null && registered?.reason === "unknown_session") {
+      await deps.sleep(UNKNOWN_SESSION_RETRY_MS);
+      registered = await register();
+    }
+    const id = registered?.id;
     // null: no dashboard is open (or the feature is off, or a cap was hit). Don't hold anything up.
     if (typeof id !== "string") return;
 
